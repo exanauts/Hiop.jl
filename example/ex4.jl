@@ -1,16 +1,33 @@
 include("../src/Hiop.jl")
 using .Hiop
+using LinearAlgebra
 
-# hs071
-# min x1 * x4 * (x1 + x2 + x3) + x3
-# st  x1 * x2 * x3 * x4 >= 25
-#     x1^2 + x2^2 + x3^2 + x4^2 = 40
-#     1 <= x1, x2, x3, x4 <= 5
-# Start at (1,5,5,1)
-# End at (1.000..., 4.743..., 3.821..., 1.379...)
+function eval_f(x, prob::HiopProblem) 
+  # @show prob.ns
+  obj = x[1]*(x[1] - 1.)
+  for i in 2:prob.ns
+    obj += x[i] * (x[i]-1.)
+  end
+  obj *= 0.5
 
-function eval_f(x) 
-  return x[1] * x[4] * (x[1] + x[2] + x[3]) + x[3]
+  term2 = 0.0
+  y = x[2*prob.ns+1:2*prob.ns + prob.nd]
+  buf_y = prob.user_data.Q * y
+  for i in 1:prob.nd
+    term2 += buf_y[i] * y[i]
+  end
+  obj += 0.5 * term2
+  # println("Term2: ", obj)
+
+  s = x[prob.ns+1:prob.ns+prob.ns]
+  term3 = s[1]*s[1]
+  for i in 2:prob.ns
+    term3 += s[i]*s[i]
+  end
+  obj += 0.5 * term3
+  # println("Term3: ", obj)
+
+  return obj
 end
 
 function eval_g(x, g)
@@ -96,6 +113,13 @@ function eval_h(x, mode, rows, cols, obj_factor, lambda, values)
   end
 end
 
+struct User_data
+  ns::Float64
+  Q::Matrix{Float64}
+  Md::Matrix{Float64}
+  buf_y::Vector{Float64}
+end
+
 n = 4
 x_L = [1.0, 1.0, 1.0, 1.0]
 x_U = [5.0, 5.0, 5.0, 5.0]
@@ -104,8 +128,29 @@ m = 2
 g_L = [25.0, 40.0]
 g_U = [2.0e19, 40.0]
 
-# prob = createProblem(n, x_L, x_U, m, g_L, g_U, 8, 10,
-#                      eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
+ns = 100
+
+Q = Matrix{Float64}(undef, ns, ns)
+Q .= 1e-8
+for i in 1:ns  
+  Q[i,i] += 2.
+end
+for i in 2:ns-1  
+  Q[i,i+1] += 1.
+  Q[i+1,i] += 1.
+end
+
+Md = Matrix{Float64}(undef, ns, ns)
+Md .= -1.0
+buf_y = Vector{Float64}(undef, ns)
+
+user_data = User_data(ns, Q, Md, buf_y)
+
+n = 3*ns
+m = ns+3
+
+nlp = createProblem(ns, n, x_L, x_U, m, g_L, g_U, 8, 10,
+                     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, user_data)
 
 # prob.x = [1.0, 5.0, 5.0, 1.0]
 # status = solveProblem(prob)
@@ -116,6 +161,5 @@ g_U = [2.0e19, 40.0]
 
 # nlp = Ptr{Nothing}()
 # @show nlp
-nlp = createProblem(100)
 solveProblem(nlp);
 # destroyProblem(nlp);

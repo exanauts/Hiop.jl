@@ -21,10 +21,29 @@ function __init__()
     end
 end
 
+mutable struct cHiopProblem
+    refcppHiop::Ptr{Cvoid}
+    jprob::Ptr{Cvoid}
+    get_prob_sizes::Ptr{Cvoid}
+    get_vars_info::Ptr{Cvoid}
+    get_cons_info::Ptr{Cvoid}
+    eval_f::Ptr{Cvoid}
+    eval_gradf::Ptr{Cvoid}
+    eval_cons::Ptr{Cvoid}
+    get_sparse_dense_blocks_info::Ptr{Cvoid}
+    eval_Jac_cons::Ptr{Cvoid}
+    eval_Hess_Lagr::Ptr{Cvoid}
+    function cHiopProblem()
+        return new(C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL)
+    end
+end
+
 mutable struct HiopProblem
-    ref::Ptr{Cvoid}  # Reference to the internal data structure
+    cprob::cHiopProblem  # Reference to the C data structure
     n::Int64  # Num vars
     m::Int64  # Num cons
+    nd::Int64 # Dense whatever
+    ns::Int64 # Sparse whatever
     x::Vector{Float64}  # Starting and final solution
     g::Vector{Float64}  # Final constraint values
     mult_g::Vector{Float64} # lagrange multipliers on constraints
@@ -39,15 +58,15 @@ mutable struct HiopProblem
     eval_grad_f::Function
     eval_jac_g::Function
     eval_h  # Can be nothing
-    intermediate  # Can be nothing
+    user_data::Any 
 
     function HiopProblem(
-        ref::Ptr{Cvoid}, n, m,
-        eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
-        prob = new(ref, n, m, zeros(Float64, n), zeros(Float64, m), zeros(Float64,m),
+        n, m, nd, ns,
+        eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, user_data)
+        prob = new(cHiopProblem(), n, m, nd, ns, zeros(Float64, n), zeros(Float64, m), zeros(Float64,m),
                    zeros(Float64,n), zeros(Float64,n), 0.0, 0,
-                   eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, nothing,
-                   :Min)
+                   eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, user_data)
+        prob.cprob.jprob = pointer_from_objref(prob)
         # Free the internal HiopProblem structure when
         # the Julia HiopProblem instance goes out of scope
         finalizer(freeProblem, prob)
@@ -86,7 +105,7 @@ function eval_f_wrapper(n::Cint, x_ptr::Ptr{Float64}, new_x::Cint, obj_ptr::Ptr{
     # Extract Julia the problem from the pointer
     prob = unsafe_pointer_to_objref(user_data)::HiopProblem
     # Calculate the new objective
-    new_obj = convert(Float64, prob.eval_f(unsafe_wrap(Array,x_ptr, Int(n))))::Float64
+    new_obj = convert(Float64, prob.eval_f(unsafe_wrap(Array,x_ptr, Int(n)), prob))::Float64
     # Fill out the pointer
     unsafe_store!(obj_ptr, new_obj)
     # Done
@@ -152,24 +171,26 @@ function eval_h_wrapper(n::Cint, x_ptr::Ptr{Float64}, new_x::Cint, obj_factor::F
     end
 end
 
-# Intermediate
-function intermediate_wrapper(alg_mod::Cint, iter_count::Cint, obj_value::Float64, inf_pr::Float64, inf_du::Float64, mu::Float64, d_norm::Float64, regularization_size::Float64, alpha_du::Float64, alpha_pr::Float64, ls_trials::Cint, user_data::Ptr{Cvoid})
-    # Extract Julia the problem from the pointer
-    prob = unsafe_pointer_to_objref(user_data)::HiopProblem
-    keepgoing = prob.intermediate(Int(alg_mod), Int(iter_count), obj_value, inf_pr, inf_du, mu, d_norm, regularization_size, alpha_du, alpha_pr, Int(ls_trials))
-    # Done
-    return keepgoing ? Int32(1) : Int32(0)
-end
-
 ###########################################################################
 # C function wrappers
 ###########################################################################
-function createProblem(ns::Int64)
-    solver = Ref{Ptr{Nothing}}()
-    @show typeof(solver)
-    ret = ccall(:hiop_createProblem, Cint, (Ptr{Ptr{Cvoid}}, Cint), solver, ns)
-    @show solver[], solver
-    return solver[]
+function createProblem(ns::Int, n::Int, x_L::Vector{Float64}, x_U::Vector{Float64},
+    m::Int, g_L::Vector{Float64}, g_U::Vector{Float64},
+    nele_jac::Int, nele_hess::Int,
+    eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h = nothing, user_data = nothing)
+    # Wrap callbacks
+    prob = HiopProblem(n, m, ns, ns, eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, user_data)
+    prob.cprob.eval_f = @cfunction(eval_f_wrapper, Cint,
+                    (Cint, Ptr{Float64}, Cint, Ptr{Float64}, Ptr{Cvoid}))
+    ret = ccall(:hiop_createProblem, Cint, 
+    (Ptr{cHiopProblem}, Cint,
+    ),
+    pointer_from_objref(prob.cprob), ns
+    )
+    if ret != 0 
+        error("IPOPT: Failed to construct problem.")
+    end
+    return prob
 end
 # function createProblem(n::Int, x_L::Vector{Float64}, x_U::Vector{Float64},
 #     m::Int, g_L::Vector{Float64}, g_U::Vector{Float64},
@@ -209,110 +230,16 @@ end
 # TODO: Not even expose this? Seems dangerous, should just destruct
 # the HiopProblem object via GC
 function freeProblem(prob::HiopProblem)
-    if prob.ref != C_NULL
-        ccall((:FreeHiopProblem, libipopt), Cvoid, (Ptr{Cvoid},), prob.ref)
-        prob.ref = C_NULL
+    if prob.cprob.refcppHiop != C_NULL
+        ccall(:hiop_destroyProblem, Cint, (Ptr{cHiopProblem},), pointer_from_objref(prob.cprob))
+        prob.cprob.refcppHiop = C_NULL
     end
 end
 
-
-function addOption(prob::HiopProblem, keyword::String, value::String)
-    #/** Function for adding a string option.  Returns FALSE the option
-    # *  could not be set (e.g., if keyword is unknown) */
-    if !(isascii(keyword) && isascii(value))
-        error("IPOPT: Non ASCII parameters not supported")
-    end
-    ret = ccall((:AddIpoptStrOption, libipopt),
-    Cint, (Ptr{Cvoid}, Ptr{UInt8}, Ptr{UInt8}),
-    prob.ref, keyword, value)
-    if ret == 0
-        error("IPOPT: Couldn't set option '$keyword' to value '$value'.")
-    end
-end
-
-
-function addOption(prob::HiopProblem, keyword::String, value::Float64)
-    #/** Function for adding a Number option.  Returns FALSE the option
-    # *  could not be set (e.g., if keyword is unknown) */
-    if !isascii(keyword)
-        error("IPOPT: Non ASCII parameters not supported")
-    end
-    ret = ccall((:AddIpoptNumOption, libipopt),
-    Cint, (Ptr{Cvoid}, Ptr{UInt8}, Float64),
-    prob.ref, keyword, value)
-    if ret == 0
-        error("IPOPT: Couldn't set option '$keyword' to value '$value'.")
-    end
-end
-
-
-function addOption(prob::HiopProblem, keyword::String, value::Integer)
-    #/** Function for adding an Int option.  Returns FALSE the option
-    # *  could not be set (e.g., if keyword is unknown) */
-    if !isascii(keyword)
-        error("IPOPT: Non ASCII parameters not supported")
-    end
-    ret = ccall((:AddIpoptIntOption, libipopt),
-    Cint, (Ptr{Cvoid}, Ptr{UInt8}, Cint),
-    prob.ref, keyword, value)
-    if ret == 0
-        error("IPOPT: Couldn't set option '$keyword' to value '$value'.")
-    end
-end
-
-
-function openOutputFile(prob::HiopProblem, file_name::String, print_level::Int)
-    #/** Function for opening an output file for a given name with given
-    # *  printlevel.  Returns false, if there was a problem opening the
-    # *  file. */
-    if !isascii(file_name)
-        error("IPOPT: Non ASCII parameters not supported")
-    end
-    ret = ccall((:OpenIpoptOutputFile, libipopt),
-    Cint, (Ptr{Cvoid}, Ptr{UInt8}, Cint),
-    prob.ref, file_name, print_level)
-    if ret == 0
-        error("IPOPT: Couldn't open output file.")
-    end
-end
-
-# TODO: Verify this function even works! Trying it with 0.5 on HS071
-# seems to change nothing.
-function setProblemScaling(prob::HiopProblem, obj_scaling::Float64,
-    x_scaling = nothing,
-    g_scaling = nothing)
-    #/** Optional function for setting scaling parameter for the NLP.
-    # *  This corresponds to the get_scaling_parameters method in TNLP.
-    # *  If the pointers x_scaling or g_scaling are NULL, then no scaling
-    # *  for x resp. g is done. */
-    x_scale_arg = (x_scaling == nothing) ? C_NULL : x_scaling
-    g_scale_arg = (g_scaling == nothing) ? C_NULL : g_scaling
-    ret = ccall((:SetHiopProblemScaling, libipopt),
-    Cint, (Ptr{Cvoid}, Float64, Ptr{Float64}, Ptr{Float64}),
-    prob.ref, obj_scaling, x_scale_arg, g_scale_arg)
-    if ret == 0
-        error("IPOPT: Error setting problem scaling.")
-    end
-end
-
-
-function setIntermediateCallback(prob::HiopProblem, intermediate::Function)
-    intermediate_cb = @cfunction(intermediate_wrapper, Cint,
-    (Cint, Cint, Float64, Float64, Float64, Float64,
-    Float64, Float64, Float64, Float64, Cint, Ptr{Cvoid}))
-    ret = ccall((:SetIntermediateCallback, libipopt), Cint,
-    (Ptr{Cvoid}, Ptr{Cvoid}), prob.ref, intermediate_cb)
-    prob.intermediate = intermediate
-    if ret == 0
-        error("IPOPT: Something went wrong setting the intermediate callback.")
-    end
-end
-
-
-function solveProblem(nlp::Ptr{Nothing})
+function solveProblem(prob::HiopProblem)
     final_objval = [0.0]
-    @show nlp
-    ret = ccall(:hiop_solveProblem, Cint, (Ptr{Cvoid}, ), nlp)
+    @show prob.cprob.refcppHiop
+    ret = ccall(:hiop_solveProblem, Cint, (Ptr{cHiopProblem}, ), pointer_from_objref(prob.cprob))
     # ret = ccall((:IpoptSolve, libipopt),
     # Cint, (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Any),
     # prob.ref, prob.x, prob.g, final_objval, prob.mult_g, prob.mult_x_L, prob.mult_x_U, prob)

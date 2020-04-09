@@ -6,14 +6,48 @@
 #include "hiopNlpFormulation.hpp"
 #include "hiopAlgFilterIPM.hpp"
 #include "hiopMatrix.hpp"
+#include <iostream>
 
 using namespace hiop;
+extern "C" {
+  typedef struct cHiopProblem {
+    hiopNlpMDS * refcppHiop;
+    void *jprob;
+    int (*get_prob_sizes)(long long n_, long long m_, void* jprob); 
+    int (*get_vars_info)(long long n, double *xlow_, double* xupp_, void* jprob);
+    int (*get_cons_info)(long long m, double *clow_, double* cupp_, void* jprob);
+    int (*eval_f)(int n, double* x, int new_x, double* obj, void* jprob);
+    int (*eval_grad_f)(long long n, double* x, int new_x, double* gradf, void* jprob);
+    int (*eval_cons)(long long n, long long m,
+      const long long num_cons, long long* idx_cons,  
+      double* x, int new_x, 
+      double* cons, void* jprob);
+    int (*get_sparse_dense_blocks_info)(int nx_sparse, int nx_dense,
+      int nnz_sparse_Jaceq, int nnz_sparse_Jacineq,
+      int nnz_sparse_Hess_Lagr_SS, 
+      int nnz_sparse_Hess_Lagr_SD, void* jprob);
+    int (*eval_Jac_cons)(long long n, long long m,
+      long long num_cons, long long* idx_cons,
+      double* x, int new_x,
+      long long nsparse, long long ndense, 
+      int nnzJacS, int* iJacS, int* jJacS, double* MJacS, 
+      double** JacD, void *jprob);
+    int (*eval_Hess_Lagr)(long long n, long long m,
+      double* x, int new_x, double obj_factor,
+      double* lambda, int new_lambda,
+      long long nsparse, long long ndense, 
+      int nnzHSS, int* iHSS, int* jHSS, double* MHSS, 
+      double** HDD,
+      int nnzHSD, int* iHSD, int* jHSD, double* MHSD, void* jprob);
+  } cHiopProblem;
+}
+
 
 class cppJuliaProblem : public hiopInterfaceMDS
 {
   public:
-    cppJuliaProblem(int ns_, long long int n_, long long int m_)
-      : ns(ns_), n(n_), m(m_) 
+    cppJuliaProblem(int ns_, long long int n_, long long int m_, cHiopProblem *cprob_)
+      : ns(ns_), n(n_), m(m_), cprob(cprob_) 
     {
       if(ns<=0) {
         ns = 4;
@@ -52,6 +86,7 @@ class cppJuliaProblem : public hiopInterfaceMDS
     {
       n_ = n;
       m_ = m;
+      // cprob->get_vars_info(n, m, cprob->jprob);
       return true;
     };
     bool get_vars_info(const long long& n, double *xlow_, double* xupp_, NonlinearityType* type)
@@ -98,22 +133,27 @@ class cppJuliaProblem : public hiopInterfaceMDS
     };
     bool eval_f(const long long& n, const double* x, bool new_x, double& obj_value)
     {
-      assert(ns>=4); //assert(Q->n()==nd); assert(Q->m()==nd);
-      obj_value=x[0]*(x[0]-1.);
-      //sum 0.5 {x_i*(x_{i}-1) : i=1,...,ns} + 0.5 y'*Qd*y + 0.5 s^T s
-      for(int i=1; i<ns; i++) obj_value += x[i]*(x[i]-1.);
-      obj_value *= 0.5;
+      // assert(ns>=4); assert(Q->n()==nd); assert(Q->m()==nd);
+      // obj_value=x[0]*(x[0]-1.);
+      // //sum 0.5 {x_i*(x_{i}-1) : i=1,...,ns} + 0.5 y'*Qd*y + 0.5 s^T s
+      // for(int i=1; i<ns; i++) obj_value += x[i]*(x[i]-1.);
+      // obj_value *= 0.5;
+      // std::cout.precision(17);  
+      // std::cout << "term1: " << obj_value << std::endl;
 
-      double term2=0.;
-      const double* y = x+2*ns;
-      Q->timesVec(0.0, _buf_y, 1., y);
-      for(int i=0; i<nd; i++) term2 += _buf_y[i] * y[i];
-      obj_value += 0.5*term2;
+      // double term2=0.;
+      // const double* y = x+2*ns;
+      // Q->timesVec(0.0, _buf_y, 1., y);
+      // for(int i=0; i<nd; i++) term2 += _buf_y[i] * y[i];
+      // obj_value += 0.5*term2;
+      // std::cout << "term2: " << obj_value << std::endl;
       
-      const double* s=x+ns;
-      double term3=s[0]*s[0];
-      for(int i=1; i<ns; i++) term3 += s[i]*s[i];
-      obj_value += 0.5*term3;
+      // const double* s=x+ns;
+      // double term3=s[0]*s[0];
+      // for(int i=1; i<ns; i++) term3 += s[i]*s[i];
+      // obj_value += 0.5*term3;
+      // std::cout << "term3: " << obj_value << std::endl;
+      cprob->eval_f(n, (double *) x, 0, &obj_value, cprob->jprob);
       return true;
     };
 
@@ -339,15 +379,10 @@ private:
   long long int n, m;
   hiop::hiopMatrixDense *Q, *Md;
   double* _buf_y;
-
+  cHiopProblem *cprob;
 };
 
-extern "C" struct cJuliaProblem {
-  hiopNlpMDS * cppproblem;
-
-};
-
-extern "C" int hiop_createProblem(void **problem, int ns);
-extern "C" int hiop_solveProblem(void *problem);
-extern "C" int hiop_destroyProblem(void *problem);
+extern "C" int hiop_createProblem(cHiopProblem *problem, int ns);
+extern "C" int hiop_solveProblem(cHiopProblem *problem);
+extern "C" int hiop_destroyProblem(cHiopProblem *problem);
 #endif

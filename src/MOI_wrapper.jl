@@ -24,7 +24,7 @@ end
 ConstraintInfo(func, set) = ConstraintInfo(func, set, nothing)
 
 mutable struct Optimizer <: MOI.AbstractOptimizer
-    inner::Union{IpoptProblem,Nothing}
+    inner::Union{HiopProblem,Nothing}
 
     # Problem data.
     variable_info::Vector{VariableInfo}
