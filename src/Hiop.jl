@@ -28,14 +28,11 @@ mutable struct cHiopProblem
     get_vars_info::Ptr{Cvoid}
     get_cons_info::Ptr{Cvoid}
     eval_f::Ptr{Cvoid}
-    eval_gradf::Ptr{Cvoid}
+    eval_grad_f::Ptr{Cvoid}
     eval_cons::Ptr{Cvoid}
     get_sparse_dense_blocks_info::Ptr{Cvoid}
     eval_Jac_cons::Ptr{Cvoid}
     eval_Hess_Lagr::Ptr{Cvoid}
-    function cHiopProblem()
-        return new(C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL)
-    end
 end
 
 mutable struct HiopProblem
@@ -44,8 +41,18 @@ mutable struct HiopProblem
     m::Int64  # Num cons
     nd::Int64 # Dense whatever
     ns::Int64 # Sparse whatever
+    nx_sparse::Int32
+    nx_dense::Int32 
+    nnz_sparse_Jaceq::Int32
+    nnz_sparse_Jacineq::Int32
+    nnz_sparse_Hess_Lagr_SS::Int32
+    nnz_sparse_Hess_Lagr_SD::Int32
     x::Vector{Float64}  # Starting and final solution
+    x_L::Vector{Float64}  # Starting and final solution
+    x_U::Vector{Float64}  # Starting and final solution
     g::Vector{Float64}  # Final constraint values
+    g_L::Vector{Float64}  # Final constraint values
+    g_U::Vector{Float64}  # Final constraint values
     mult_g::Vector{Float64} # lagrange multipliers on constraints
     mult_x_L::Vector{Float64} # lagrange multipliers on lower bounds
     mult_x_U::Vector{Float64} # lagrange multipliers on upper bounds
@@ -54,7 +61,7 @@ mutable struct HiopProblem
 
     # Callbacks
     eval_f::Function
-    eval_cons::Function
+    eval_g::Function
     eval_grad_f::Function
     eval_jac_g::Function
     eval_h  # Can be nothing
@@ -62,10 +69,17 @@ mutable struct HiopProblem
 
     function HiopProblem(
         n, m, nd, ns,
+        nx_sparse, nx_dense, nnz_sparse_Jaceq, nnz_sparse_Jacineq, nnz_sparse_Hess_Lagr_SS, nnz_sparse_Hess_Lagr_SD,
+        x_L, x_U, g_L, g_U,
         eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, user_data)
-        prob = new(cHiopProblem(), n, m, nd, ns, zeros(Float64, n), zeros(Float64, m), zeros(Float64,m),
-                   zeros(Float64,n), zeros(Float64,n), 0.0, 0,
-                   eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, user_data)
+        prob = new(cHiopProblem(C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL), 
+                    n, m, nd, ns, 
+                    nx_sparse, nx_dense, nnz_sparse_Jaceq, nnz_sparse_Jacineq, nnz_sparse_Hess_Lagr_SS, nnz_sparse_Hess_Lagr_SD,
+                    zeros(Float64, n), x_L, x_U, 
+                    zeros(Float64, m), g_L, g_U,
+                    zeros(Float64,m),
+                    zeros(Float64,n), zeros(Float64,n), 0.0, 0,
+                    eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, user_data)
         prob.cprob.jprob = pointer_from_objref(prob)
         # Free the internal HiopProblem structure when
         # the Julia HiopProblem instance goes out of scope
@@ -101,37 +115,90 @@ ApplicationReturnStatus = Dict(
 # Callback wrappers
 ###########################################################################
 # Objective (eval_f)
-function eval_f_wrapper(n::Cint, x_ptr::Ptr{Float64}, new_x::Cint, obj_ptr::Ptr{Float64}, user_data::Ptr{Cvoid})
-    # Extract Julia the problem from the pointer
-    prob = unsafe_pointer_to_objref(user_data)::HiopProblem
-    # Calculate the new objective
-    new_obj = convert(Float64, prob.eval_f(unsafe_wrap(Array,x_ptr, Int(n)), prob))::Float64
-    # Fill out the pointer
-    unsafe_store!(obj_ptr, new_obj)
-    # Done
-    return Int32(1)
+function get_prob_sizes_wrapper(n_::Ptr{Clonglong}, m_::Ptr{Clonglong}, prob_::Ptr{Cvoid})
+  prob = unsafe_pointer_to_objref(prob_)::HiopProblem
+  n = unsafe_wrap(Array{Int64}, n_, 1)
+  m = unsafe_wrap(Array{Int64}, m_, 1)
+  n[1] = prob.n
+  m[1] = prob.m
+  return Int32(1)
+end
+
+function get_vars_info_wrapper(n_::Ptr{Clonglong}, xlow_::Ptr{Cdouble}, xupp_::Ptr{Cdouble}, prob_::Ptr{Cvoid})
+  prob = unsafe_pointer_to_objref(prob_)::HiopProblem
+  @show prob.n
+  @show length(prob.x_U)
+  xlow = unsafe_wrap(Array{Float64}, xlow_, prob.n)
+  xupp = unsafe_wrap(Array{Float64}, xupp_, prob.n)
+  xlow .= prob.x_L
+  xupp .= prob.x_U
+  return Int32(1)
+end
+
+function get_cons_info_wrapper(m_::Ptr{Clonglong}, clow_::Ptr{Cdouble}, cupp_::Ptr{Cdouble}, prob_::Ptr{Cvoid})
+  prob = unsafe_pointer_to_objref(prob_)::HiopProblem
+  clow = unsafe_wrap(Array{Float64}, clow_, prob.m)
+  cupp = unsafe_wrap(Array{Float64}, cupp_, prob.m)
+  clow .= prob.g_L
+  cupp .= prob.g_U
+  return Int32(1)
+end
+
+function get_sparse_dense_blocks_info_wrapper(nx_sparse_::Ptr{Cint}, nx_dense_::Ptr{Cint},
+    nnz_sparse_Jaceq_::Ptr{Cint}, nnz_sparse_Jacineq_::Ptr{Cint},
+    nnz_sparse_Hess_Lagr_SS_::Ptr{Cint}, 
+    nnz_sparse_Hess_Lagr_SD_::Ptr{Cint}, 
+    prob_::Ptr{Cvoid})
+  prob = unsafe_pointer_to_objref(prob_)::HiopProblem
+  nx_sparse = unsafe_wrap(Array{Int32}, nx_sparse_, 1)
+  nx_dense = unsafe_wrap(Array{Int32}, nx_dense_, 1)
+  nnz_sparse_Jaceq = unsafe_wrap(Array{Int32}, nnz_sparse_Jaceq_, 1)
+  nnz_sparse_Jacineq = unsafe_wrap(Array{Int32}, nnz_sparse_Jacineq_, 1)
+  nnz_sparse_Hess_Lagr_SS = unsafe_wrap(Array{Int32}, nnz_sparse_Hess_Lagr_SS_, 1)
+  nnz_sparse_Hess_Lagr_SD = unsafe_wrap(Array{Int32}, nnz_sparse_Hess_Lagr_SD_, 1)
+
+  nx_sparse[1] = prob.nx_sparse
+  nx_dense[1] = prob.nx_dense
+  nnz_sparse_Jaceq[1] = prob.nnz_sparse_Jaceq
+  nnz_sparse_Jacineq[1] = prob.nnz_sparse_Jacineq
+  nnz_sparse_Hess_Lagr_SS[1] = prob.nnz_sparse_Hess_Lagr_SS
+  nnz_sparse_Hess_Lagr_SD[1] = prob.nnz_sparse_Hess_Lagr_SD
+  return Int32(1)
+end
+
+function eval_f_wrapper(n::Clonglong, x_ptr::Ptr{Float64}, new_x::Cint, obj_ptr::Ptr{Float64}, prob_::Ptr{Cvoid})
+  # Extract Julia the problem from the pointer
+  prob = unsafe_pointer_to_objref(prob_)::HiopProblem
+  # Calculate the new objective
+  new_obj = convert(Float64, prob.eval_f(unsafe_wrap(Array,x_ptr, Int(n)), prob))::Float64
+  # Fill out the pointer
+  unsafe_store!(obj_ptr, new_obj)
+  # Done
+  return Int32(1)
 end
 
 # Constraints (eval_g)
-function eval_g_wrapper(n::Cint, x_ptr::Ptr{Float64}, new_x::Cint, m::Cint, g_ptr::Ptr{Float64}, user_data::Ptr{Cvoid})
-    # Extract Julia the problem from the pointer
-    prob = unsafe_pointer_to_objref(user_data)::HiopProblem
-    # Calculate the new constraint values
-    new_g = unsafe_wrap(Array,g_ptr, Int(m))
-    prob.eval_g(unsafe_wrap(Array,x_ptr, Int(n)), new_g)
-    # Done
-    return Int32(1)
+function eval_g_wrapper(n::Clonglong, m::Clonglong, num_cons::Clonglong, idx_cons_ptr::Ptr{Clonglong}, x_ptr::Ptr{Float64}, new_x::Cint, g_ptr::Ptr{Float64}, user_data::Ptr{Cvoid})
+  # Extract Julia the problem from the pointer
+  prob = unsafe_pointer_to_objref(user_data)::HiopProblem
+  x = unsafe_wrap(Array{Float64}, x_ptr, prob.n)
+  idx_cons = unsafe_wrap(Array{Int64}, idx_cons_ptr, num_cons)
+  # Calculate the new constraint values
+  new_g = unsafe_wrap(Array,g_ptr, Int(m))
+  prob.eval_g(x, idx_cons, new_g, prob)
+  # Done
+  return Int32(1)
 end
 
 # Objective gradient (eval_grad_f)
-function eval_grad_f_wrapper(n::Cint, x_ptr::Ptr{Float64}, new_x::Cint, grad_f_ptr::Ptr{Float64}, user_data::Ptr{Cvoid})
-    # Extract Julia the problem from the pointer
-    prob = unsafe_pointer_to_objref(user_data)::HiopProblem
-    # Calculate the gradient
-    new_grad_f = unsafe_wrap(Array,grad_f_ptr, Int(n))
-    prob.eval_grad_f(unsafe_wrap(Array,x_ptr, Int(n)), new_grad_f)
-    # Done
-    return Int32(1)
+function eval_grad_f_wrapper(n::Clonglong, x_ptr::Ptr{Float64}, new_x::Cint, grad_f_ptr::Ptr{Float64}, user_data::Ptr{Cvoid})
+  # Extract Julia the problem from the pointer
+  prob = unsafe_pointer_to_objref(user_data)::HiopProblem
+  # Calculate the gradient
+  new_grad_f = unsafe_wrap(Array,grad_f_ptr, Int(n))
+  prob.eval_grad_f(unsafe_wrap(Array,x_ptr, Int(n)), new_grad_f, prob)
+  # Done
+  return Int32(1)
 end
 
 # Jacobian (eval_jac_g)
@@ -174,21 +241,43 @@ end
 ###########################################################################
 # C function wrappers
 ###########################################################################
-function createProblem(ns::Int, n::Int, x_L::Vector{Float64}, x_U::Vector{Float64},
+function createProblem(ns::Int, 
+    nx_sparse::Int32,
+    nx_dense::Int32,
+    nnz_sparse_Jaceq::Int32,
+    nnz_sparse_Jacineq::Int32,
+    nnz_sparse_Hess_Lagr_SS::Int32,
+    nnz_sparse_Hess_Lagr_SD::Int32,
+    n::Int, 
+    x_L::Vector{Float64}, x_U::Vector{Float64},
     m::Int, g_L::Vector{Float64}, g_U::Vector{Float64},
     nele_jac::Int, nele_hess::Int,
     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h = nothing, user_data = nothing)
     # Wrap callbacks
-    prob = HiopProblem(n, m, ns, ns, eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, user_data)
+    prob = HiopProblem(n, m, ns, ns, 
+                       nx_sparse, nx_dense, nnz_sparse_Jaceq, nnz_sparse_Jacineq, nnz_sparse_Hess_Lagr_SS, nnz_sparse_Hess_Lagr_SD,
+                       x_L, x_U, g_L, g_U, eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, user_data)
+    prob.cprob.get_sparse_dense_blocks_info = @cfunction(get_sparse_dense_blocks_info_wrapper, Cint,
+                    (Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cvoid}))
+    prob.cprob.get_prob_sizes = @cfunction(get_prob_sizes_wrapper, Cint,
+                    (Ptr{Clonglong}, Ptr{Clonglong}, Ptr{Cvoid}))
+    prob.cprob.get_vars_info = @cfunction(get_vars_info_wrapper, Cint,
+                    (Ptr{Clonglong}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cvoid}))
+    prob.cprob.get_cons_info = @cfunction(get_cons_info_wrapper, Cint,
+                    (Ptr{Clonglong}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cvoid}))
     prob.cprob.eval_f = @cfunction(eval_f_wrapper, Cint,
-                    (Cint, Ptr{Float64}, Cint, Ptr{Float64}, Ptr{Cvoid}))
+                    (Clonglong, Ptr{Float64}, Cint, Ptr{Float64}, Ptr{Cvoid}))
+    prob.cprob.eval_grad_f = @cfunction(eval_grad_f_wrapper, Cint,
+                    (Clonglong, Ptr{Float64}, Cint, Ptr{Float64}, Ptr{Cvoid}))
+    prob.cprob.eval_cons = @cfunction(eval_g_wrapper, Cint,
+                    (Clonglong, Clonglong, Clonglong, Ptr{Clonglong}, Ptr{Float64}, Cint, Ptr{Float64}, Ptr{Cvoid}))
     ret = ccall(:hiop_createProblem, Cint, 
     (Ptr{cHiopProblem}, Cint,
     ),
     pointer_from_objref(prob.cprob), ns
     )
     if ret != 0 
-        error("IPOPT: Failed to construct problem.")
+        error("HiOp: Failed to construct problem.")
     end
     return prob
 end

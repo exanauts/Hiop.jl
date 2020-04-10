@@ -1,7 +1,7 @@
 typedef struct cHiopProblem {
-  void * refcppHiop;
-  void *jprob;
-  int (*get_prob_sizes)(long long n_, long long m_, void* jprob); 
+  void * refcppHiop; // Pointer to the cpp object
+  void *jprob; // pointer to the julia problem object
+  int (*get_prob_sizes)(long long* n_, long long* m_, void* jprob); 
   int (*get_vars_info)(long long n, double *xlow_, double* xupp_, void* jprob);
   int (*get_cons_info)(long long m, double *clow_, double* cupp_, void* jprob);
   int (*eval_f)(int n, double* x, int new_x, double* obj, void* jprob);
@@ -10,10 +10,10 @@ typedef struct cHiopProblem {
     const long long num_cons, long long* idx_cons,  
     double* x, int new_x, 
     double* cons, void* jprob);
-  int (*get_sparse_dense_blocks_info)(int nx_sparse, int nx_dense,
-    int nnz_sparse_Jaceq, int nnz_sparse_Jacineq,
-    int nnz_sparse_Hess_Lagr_SS, 
-    int nnz_sparse_Hess_Lagr_SD, void* jprob);
+  int (*get_sparse_dense_blocks_info)(int* nx_sparse, int* nx_dense,
+    int* nnz_sparse_Jaceq, int* nnz_sparse_Jacineq,
+    int* nnz_sparse_Hess_Lagr_SS, 
+    int* nnz_sparse_Hess_Lagr_SD, void* jprob);
   int (*eval_Jac_cons)(long long n, long long m,
     long long num_cons, long long* idx_cons,
     double* x, int new_x,

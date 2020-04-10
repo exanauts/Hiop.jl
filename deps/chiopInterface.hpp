@@ -13,7 +13,7 @@ extern "C" {
   typedef struct cHiopProblem {
     hiopNlpMDS * refcppHiop;
     void *jprob;
-    int (*get_prob_sizes)(long long n_, long long m_, void* jprob); 
+    int (*get_prob_sizes)(long long* n_, long long* m_, void* jprob); 
     int (*get_vars_info)(long long n, double *xlow_, double* xupp_, void* jprob);
     int (*get_cons_info)(long long m, double *clow_, double* cupp_, void* jprob);
     int (*eval_f)(int n, double* x, int new_x, double* obj, void* jprob);
@@ -22,10 +22,10 @@ extern "C" {
       const long long num_cons, long long* idx_cons,  
       double* x, int new_x, 
       double* cons, void* jprob);
-    int (*get_sparse_dense_blocks_info)(int nx_sparse, int nx_dense,
-      int nnz_sparse_Jaceq, int nnz_sparse_Jacineq,
-      int nnz_sparse_Hess_Lagr_SS, 
-      int nnz_sparse_Hess_Lagr_SD, void* jprob);
+    int (*get_sparse_dense_blocks_info)(int* nx_sparse, int* nx_dense,
+      int* nnz_sparse_Jaceq, int* nnz_sparse_Jacineq,
+      int* nnz_sparse_Hess_Lagr_SS, 
+      int* nnz_sparse_Hess_Lagr_SD, void* jprob);
     int (*eval_Jac_cons)(long long n, long long m,
       long long num_cons, long long* idx_cons,
       double* x, int new_x,
@@ -84,51 +84,53 @@ class cppJuliaProblem : public hiopInterfaceMDS
 
     bool get_prob_sizes(long long& n_, long long& m_) 
     {
-      n_ = n;
-      m_ = m;
-      // cprob->get_vars_info(n, m, cprob->jprob);
+      // n_ = n;
+      // m_ = m;
+      cprob->get_prob_sizes(&n_, &m_, cprob->jprob);
       return true;
     };
     bool get_vars_info(const long long& n, double *xlow_, double* xupp_, NonlinearityType* type)
     {
-      assert(n>=4 && "number of variables should be greater than 4 for this example");
-      assert(n==2*ns+nd);
+      // assert(n>=4 && "number of variables should be greater than 4 for this example");
+      // assert(n==2*ns+nd);
 
-      //x
-      for(int i=0; i<ns; ++i) xlow_[i] = -1e+20;
-      //s
-      for(int i=ns; i<2*ns; ++i) xlow_[i] = 0.;
-      //y 
-      xlow_[2*ns] = -4.;
-      for(int i=2*ns+1; i<n; ++i) xlow_[i] = -1e+20;
+      // //x
+      // for(int i=0; i<ns; ++i) xlow_[i] = -1e+20;
+      // //s
+      // for(int i=ns; i<2*ns; ++i) xlow_[i] = 0.;
+      // //y 
+      // xlow_[2*ns] = -4.;
+      // for(int i=2*ns+1; i<n; ++i) xlow_[i] = -1e+20;
       
-      //x
-      for(int i=0; i<ns; ++i) xupp_[i] = 3.;
-      //s
-      for(int i=ns; i<2*ns; ++i) xupp_[i] = +1e+20;
-      //y
-      xupp_[2*ns] = 4.;
-      for(int i=2*ns+1; i<n; ++i) xupp_[i] = +1e+20;
+      // //x
+      // for(int i=0; i<ns; ++i) xupp_[i] = 3.;
+      // //s
+      // for(int i=ns; i<2*ns; ++i) xupp_[i] = +1e+20;
+      // //y
+      // xupp_[2*ns] = 4.;
+      // for(int i=2*ns+1; i<n; ++i) xupp_[i] = +1e+20;
 
       for(int i=0; i<n; ++i) type[i]=hiopNonlinear;
+      cprob->get_vars_info(n, xlow_, xupp_, cprob->jprob);
       return true;
     };
     bool get_cons_info(const long long& m, double* clow, double* cupp, NonlinearityType* type)
     {
-      assert(m==ns+3);
-      int i;
-      //x+s - Md y = 0, i=1,...,ns
-      for(i=0; i<ns; i++) clow[i] = cupp[i] = 0.;
+      // assert(m==ns+3);
+      // int i;
+      // //x+s - Md y = 0, i=1,...,ns
+      // for(i=0; i<ns; i++) clow[i] = cupp[i] = 0.;
 
-      // [-2  ]    [ x_1 + e^T s]   [e^T]      [ 2 ]
-      clow[i] = -2; cupp[i++] = 2.;
-      // [-inf] <= [ x_2        ] + [e^T] y <= [ 2 ]
-      clow[i] = -1e+20; cupp[i++] = 2.;
-      // [-2  ]    [ x_3        ]   [e^T]      [inf]
-      clow[i] = -2; cupp[i++] = 1e+20;
-      assert(i==m);
+      // // [-2  ]    [ x_1 + e^T s]   [e^T]      [ 2 ]
+      // clow[i] = -2; cupp[i++] = 2.;
+      // // [-inf] <= [ x_2        ] + [e^T] y <= [ 2 ]
+      // clow[i] = -1e+20; cupp[i++] = 2.;
+      // // [-2  ]    [ x_3        ]   [e^T]      [inf]
+      // clow[i] = -2; cupp[i++] = 1e+20;
+      // assert(i==m);
 
-      for(i=0; i<m; ++i) type[i]=hiopNonlinear;
+      for(int i=0; i<m; ++i) type[i]=hiopNonlinear;
+      cprob->get_cons_info(m, clow, cupp, cprob->jprob);
       return true;
     };
     bool eval_f(const long long& n, const double* x, bool new_x, double& obj_value)
@@ -174,6 +176,7 @@ class cppJuliaProblem : public hiopInterfaceMDS
       const double* s=x+ns;
       double* gradf_s = gradf+ns;
       for(int i=0; i<ns; i++) gradf_s[i] = s[i];
+      cprob->eval_grad_f(n, (double *) x, 0, gradf, cprob->jprob);
 
       return true;
     };
@@ -182,6 +185,8 @@ class cppJuliaProblem : public hiopInterfaceMDS
       const double* x, bool new_x, 
       double* cons)
     {
+      cprob->eval_cons(n, m, num_cons, (long long *) idx_cons, (double *) x, new_x, cons, cprob->jprob);
+      return true;
       const double* s = x+ns;
       const double* y = x+2*ns;
 
@@ -221,12 +226,13 @@ class cppJuliaProblem : public hiopInterfaceMDS
       int& nnz_sparse_Hess_Lagr_SS, 
       int& nnz_sparse_Hess_Lagr_SD)
     {
-      nx_sparse = 2*ns;
-      nx_dense = nd;
-      nnz_sparse_Jaceq = 2*ns;
-      nnz_sparse_Jacineq = 1+ns+1+1;
-      nnz_sparse_Hess_Lagr_SS = 2*ns;
-      nnz_sparse_Hess_Lagr_SD = 0.;
+      // nx_sparse = 2*ns;
+      // nx_dense = nd;
+      // nnz_sparse_Jaceq = 2*ns;
+      // nnz_sparse_Jacineq = 1+ns+1+1;
+      // nnz_sparse_Hess_Lagr_SS = 2*ns;
+      // nnz_sparse_Hess_Lagr_SD = 0.;
+      cprob->get_sparse_dense_blocks_info(&nx_sparse, &nx_dense, &nnz_sparse_Jaceq, &nnz_sparse_Jacineq, &nnz_sparse_Hess_Lagr_SS, &nnz_sparse_Hess_Lagr_SD, cprob->jprob);
       return true;
     };
     bool eval_Jac_cons(const long long& n, const long long& m,
