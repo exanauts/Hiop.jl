@@ -19,15 +19,15 @@ typedef struct cHiopProblem {
     double* x, int new_x,
     long long nsparse, long long ndense, 
     int nnzJacS, int* iJacS, int* jJacS, double* MJacS, 
-    double** JacD, void *jprob);
+    double* JacD, void *jprob);
   int (*eval_Hess_Lagr)(long long n, long long m,
     double* x, int new_x, double obj_factor,
     double* lambda, int new_lambda,
     long long nsparse, long long ndense, 
     int nnzHSS, int* iHSS, int* jHSS, double* MHSS, 
-    double** HDD,
+    double* HDD,
     int nnzHSD, int* iHSD, int* jHSD, double* MHSD, void* jprob);
 } cHiopProblem;
-extern int hiop_createProblem(cHiopProblem *problem, int ns);
+extern int hiop_createProblem(cHiopProblem *problem);
 extern int hiop_solveProblem(cHiopProblem *problem);
 extern int hiop_destroyProblem(cHiopProblem *problem);
