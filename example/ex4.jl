@@ -47,7 +47,7 @@ function eval_g(x::Vector{Float64}, idx_cons::Vector{Int64}, g::Vector{Float64},
   return Int32(1)
 end
 
-function eval_grad_f(x::Vector{Float64}, grad_f, prob::HiopProblem)
+function eval_grad_f(x::Vector{Float64}, grad_f::Vector{Float64}, prob::HiopProblem)
   xrange = 1:prob.ns
   yrange = 2*prob.ns+1:3*prob.ns 
   srange = prob.ns+1:2*prob.ns
@@ -58,71 +58,127 @@ function eval_grad_f(x::Vector{Float64}, grad_f, prob::HiopProblem)
   return Int32(1)
 end
 
-function eval_jac_g(x, mode, rows, cols, values)
-  if mode == :Structure
-    # Constraint (row) 1
-    rows[1] = 1; cols[1] = 1
-    rows[2] = 1; cols[2] = 2
-    rows[3] = 1; cols[3] = 3
-    rows[4] = 1; cols[4] = 4
-    # Constraint (row) 2
-    rows[5] = 2; cols[5] = 1
-    rows[6] = 2; cols[6] = 2
-    rows[7] = 2; cols[7] = 3
-    rows[8] = 2; cols[8] = 4
-  else
-    # Constraint (row) 1
-    values[1] = x[2]*x[3]*x[4]  # 1,1
-    values[2] = x[1]*x[3]*x[4]  # 1,2
-    values[3] = x[1]*x[2]*x[4]  # 1,3
-    values[4] = x[1]*x[2]*x[3]  # 1,4
-    # Constraint (row) 2
-    values[5] = 2*x[1]  # 2,1
-    values[6] = 2*x[2]  # 2,2
-    values[7] = 2*x[3]  # 2,3
-    values[8] = 2*x[4]  # 2,4
-  end
-end
-
-function eval_h(x, mode, rows, cols, obj_factor, lambda, values)
-  if mode == :Structure
-    # Symmetric matrix, fill the lower left triangle only
-    idx = 1
-    for row = 1:4
-      for col = 1:row
-        rows[idx] = row
-        cols[idx] = col
-        idx += 1
+function eval_jac_g(mode::Vector{Symbol}, x::Vector{Float64}, idx_cons::Vector{Int64},
+  iJacS::Vector{Int32}, jJacS::Vector{Int32}, MJacS::Vector{Float64}, 
+  JacD::Vector{Float64}, prob::HiopProblem)
+  if :Structure in mode
+    nnzit = 1
+    for i in 1:length(idx_cons)
+      con_idx = idx_cons[i]
+      if con_idx < prob.ns
+        # x
+        iJacS[nnzit] = con_idx
+        jJacS[nnzit] = con_idx
+        nnzit += 1
+        # y
+        iJacS[nnzit] = con_idx
+        jJacS[nnzit] = con_idx + prob.ns
+        nnzit += 1
+      else
+        if con_idx - prob.ns == 0
+          # wrt x1
+          iJacS[nnzit] = 0
+          jJacS[nnzit] = 0
+          nnzit += 1
+          # wrt s
+          for i in 1:prob.ns
+            iJacS[nnzit] = 0
+            jJacS[nnzit] = prob.ns + i - 1
+            nnzit += 1
+          end
+        else
+          # wrt x2 or x3
+          @assert con_idx-prob.ns == 1 || con_idx-prob.ns == 2
+          iJacS[nnzit] = con_idx - prob.ns
+          jJacS[nnzit] = con_idx - prob.ns
+          nnzit += 1
+        end
       end
     end
-  else
-    # Again, only lower left triangle
-    # Objective
-    values[1] = obj_factor * (2*x[4])  # 1,1
-    values[2] = obj_factor * (  x[4])  # 2,1
-    values[3] = 0                      # 2,2
-    values[4] = obj_factor * (  x[4])  # 3,1
-    values[5] = 0                      # 3,2
-    values[6] = 0                      # 3,3
-    values[7] = obj_factor * (2*x[1] + x[2] + x[3])  # 4,1
-    values[8] = obj_factor * (  x[1])  # 4,2
-    values[9] = obj_factor * (  x[1])  # 4,3
-    values[10] = 0                     # 4,4
-
-    # First constraint
-    values[2] += lambda[1] * (x[3] * x[4])  # 2,1
-    values[4] += lambda[1] * (x[2] * x[4])  # 3,1
-    values[5] += lambda[1] * (x[1] * x[4])  # 3,2
-    values[7] += lambda[1] * (x[2] * x[3])  # 4,1
-    values[8] += lambda[1] * (x[1] * x[3])  # 4,2
-    values[9] += lambda[1] * (x[1] * x[2])  # 4,3
-
-    # Second constraint
-    values[1]  += lambda[2] * 2  # 1,1
-    values[3]  += lambda[2] * 2  # 2,2
-    values[6]  += lambda[2] * 2  # 3,3
-    values[10] += lambda[2] * 2  # 4,4
+    @assert nnzit == length(iJacS) + 1
   end
+  # values for sparse Jacobian if requested by the solver
+  if :Sparse in mode
+    nnzit = 1
+    for i in 1:length(idx_cons)
+      con_idx = idx_cons[i]
+      if con_idx < prob.ns
+        # sparse Jacobian EQ w.r.t. x and s
+        # x
+        MJacS[nnzit] = 1.0
+        nnzit += 1
+        # s
+        MJacS[nnzit] = 1.0
+        nnzit += 1
+      else
+        if con_idx - prob.ns == 0
+          # wrt x1
+          MJacS[nnzit] = 1.0
+          nnzit += 1
+          for i in 1:prob.ns
+            MJacS[nnzit] = 1.0
+            nnzit += 1
+          end
+        else
+          # wrt x2 or x3
+          @assert con_idx-prob.ns == 1 || con_idx-prob.ns == 2
+          MJacS[nnzit] = 1.0
+          nnzit += 1
+        end
+      end
+    end
+    @assert nnzit == length(iJacS) + 1
+  end
+  if :Dense in mode
+    # dense Jacobian w.r.t y
+    isEq = false
+    for i in 1:length(idx_cons)
+      con_idx = idx_cons[i]
+      if con_idx < prob.ns
+        isEq = true
+        @assert length(idx_cons) == prob.ns
+        continue
+      else
+        # do an in place fill-in for the ineq Jacobian corresponding to e^T
+        @assert con_idx - prob.ns == 0 || con_idx - prob.ns == 1 || con_idx - prob.ns == 2
+        @assert length(idx_cons) == 3
+        JacDmat = reshape(JacD, (3, prob.nd))
+        for i in 1:prob.nd
+          JacDmat[con_idx - prob.ns + 1, i] = 1
+        end
+      end
+    end
+    if isEq
+      Mdvec = reshape(Md,(size(prob.user_data.Md,1) * size(prob.user_data.Md,2),))
+      JacD .= Mdvec
+    end
+  end
+  return Int32(1)
+end
+
+function eval_h(mode::Vector{Symbol}, x::Vector{Float64}, obj_factor::Float64, lambda::Vector{Float64}, 
+                iHSS::Vector{Int32}, jHSS::Vector{Int32}, MHSS::Vector{Float64}, HDD::Vector{Float64}, 
+                iHSD::Vector{Int32}, jHSD::Vector{Int32}, MHSD::Vector{Float64}, prob)
+  @assert length(MHSS) == 2 * prob.ns
+  @assert length(MHSD) == 0
+  if :Structure in mode
+    for i in 1:2*prob.ns
+      iHSS[i] = i - 1
+      jHSS[i] = i - 1
+    end
+  end
+  if :Sparse in mode
+    for i in 1:2*prob.ns 
+      MHSS[i] = obj_factor
+    end
+  end
+  if :Dense in mode
+    Qvec = reshape(prob.user_data.Q, (prob.nd*prob.nd,))
+    for i in 1:prob.nd^2
+      HDD[i] = obj_factor * Qvec[i]
+    end
+  end
+  return Int32(1)
 end
 
 struct User_data
@@ -213,17 +269,7 @@ g_L[end]   = -2.;    g_U[end]   = 1e+20
 nlp = createProblem(ns,
                     Int32(nx_sparse), Int32(nx_dense), Int32(nnz_sparse_Jaceq), Int32(nnz_sparse_Jacineq), Int32(nnz_sparse_Hess_Lagr_SS), Int32(nnz_sparse_Hess_Lagr_SD),
                     n, x_L, x_U, 
-                    m, g_L, g_U, 8, 10,
+                    m, g_L, g_U,
                     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, user_data)
 
-# prob.x = [1.0, 5.0, 5.0, 1.0]
-# status = solveProblem(prob)
-
-# println(Ipopt.ApplicationReturnStatus[status])
-# println(prob.x)
-# println(prob.obj_val)
-
-# nlp = Ptr{Nothing}()
-# @show nlp
-solveProblem(nlp);
-# destroyProblem(nlp);
+solveProblem(nlp)

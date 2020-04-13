@@ -2,8 +2,7 @@ module Hiop
 using Libdl
 using LinearAlgebra
 
-export createProblem, addOption
-export openOutputFile, setProblemScaling, setIntermediateCallback
+export createProblem 
 export solveProblem
 export HiopProblem
 
@@ -202,40 +201,67 @@ function eval_grad_f_wrapper(n::Clonglong, x_ptr::Ptr{Float64}, new_x::Cint, gra
 end
 
 # Jacobian (eval_jac_g)
-function eval_jac_g_wrapper(n::Cint, x_ptr::Ptr{Float64}, new_x::Cint, m::Cint, nele_jac::Cint, iRow::Ptr{Cint}, jCol::Ptr{Cint}, values_ptr::Ptr{Float64}, user_data::Ptr{Cvoid})
+function eval_jac_g_wrapper(n::Clonglong, m::Clonglong, num_cons::Clonglong, idx_cons_ptr::Ptr{Clonglong},
+    x_ptr::Ptr{Cdouble}, new_x::Cint, nsparse::Clonglong, ndense::Clonglong, nnzJacS::Cint, iJacS_ptr::Ptr{Cint}, 
+    jJacS_ptr::Ptr{Cint}, MJacS_ptr::Ptr{Cdouble}, JacD_ptr::Ptr{Cdouble}, user_data::Ptr{Cvoid})
     # Extract Julia the problem from the pointer
     prob = unsafe_pointer_to_objref(user_data)::HiopProblem
     # Determine mode
-    mode = (values_ptr == C_NULL) ? (:Structure) : (:Values)
+    mode = Vector{Symbol}()
+    if iJacS_ptr != C_NULL && jJacS_ptr != C_NULL
+      push!(mode, :Structure)
+    end
+    if MJacS_ptr != C_NULL
+        push!(mode, :Sparse)
+    end
+    if JacD_ptr != C_NULL
+        push!(mode, :Dense)
+    end
     x = unsafe_wrap(Array, x_ptr, Int(n))
-    rows = unsafe_wrap(Array, iRow, Int(nele_jac))
-    cols = unsafe_wrap(Array,jCol, Int(nele_jac))
-    values = unsafe_wrap(Array,values_ptr, Int(nele_jac))
-    prob.eval_jac_g(x, mode, rows, cols, values)
+    idx_cons = unsafe_wrap(Array, idx_cons_ptr, Int(num_cons))
+    iJacS = unsafe_wrap(Array, iJacS_ptr, Int(nnzJacS))
+    jJacS = unsafe_wrap(Array, jJacS_ptr, Int(nnzJacS))
+    MJacS = unsafe_wrap(Array, MJacS_ptr, Int(nnzJacS))
+    JacD = unsafe_wrap(Array, JacD_ptr, Int(num_cons) * prob.nd)
+    prob.eval_jac_g(mode, x, idx_cons, iJacS, jJacS, MJacS, JacD, prob)
     # Done
     return Int32(1)
 end
 
 # Hessian
-function eval_h_wrapper(n::Cint, x_ptr::Ptr{Float64}, new_x::Cint, obj_factor::Float64, m::Cint, lambda_ptr::Ptr{Float64}, new_lambda::Cint, nele_hess::Cint, iRow::Ptr{Cint}, jCol::Ptr{Cint}, values_ptr::Ptr{Float64}, user_data::Ptr{Cvoid})
-    # Extract Julia the problem from the pointer
-    prob = unsafe_pointer_to_objref(user_data)::HiopProblem
-    # Did the user specify a Hessian
-    if prob.eval_h === nothing
-        # No Hessian provided
-        return Int32(0)
-    else
-        # Determine mode
-        mode = (values_ptr == C_NULL) ? (:Structure) : (:Values)
-        x = unsafe_wrap(Array,x_ptr, Int(n))
-        lambda = unsafe_wrap(Array,lambda_ptr, Int(m))
-        rows = unsafe_wrap(Array,iRow, Int(nele_hess))
-        cols = unsafe_wrap(Array,jCol, Int(nele_hess))
-        values = unsafe_wrap(Array,values_ptr, Int(nele_hess))
-        prob.eval_h(x, mode, rows, cols, obj_factor, lambda, values)
-        # Done
-        return Int32(1)
-    end
+function eval_h_wrapper(n::Clonglong, m::Clonglong,
+  x_ptr::Ptr{Cdouble}, new_x::Cint, obj_factor::Cdouble,
+  lambda_ptr::Ptr{Cdouble}, new_lambda::Cint, 
+  nsparse::Clonglong, ndense::Clonglong, 
+  nnzHSS::Cint, iHSS_ptr::Ptr{Cint}, jHSS_ptr::Ptr{Cint}, MHSS_ptr::Ptr{Cdouble}, 
+  HDD_ptr::Ptr{Cdouble}, 
+  nnzHSD::Cint, iHSD_ptr::Ptr{Cint}, jHSD_ptr::Ptr{Cint}, MHSD_ptr::Ptr{Cdouble},
+  user_data::Ptr{Cvoid})
+  # Extract Julia the problem from the pointer
+  prob = unsafe_pointer_to_objref(user_data)::HiopProblem
+  # Determine mode
+  mode = Vector{Symbol}()
+  if iHSS_ptr != C_NULL && jHSS_ptr != C_NULL
+      push!(mode, :Structure)
+  end
+  if MHSS_ptr != C_NULL
+      push!(mode, :Sparse)
+  end
+  if HDD_ptr != C_NULL
+      push!(mode, :Dense)
+  end
+  x = unsafe_wrap(Array, x_ptr, Int(n))
+  lambda = unsafe_wrap(Array, lambda_ptr, Int(m))
+  iHSS = unsafe_wrap(Array, iHSS_ptr, Int(nnzHSS))
+  jHSS = unsafe_wrap(Array, jHSS_ptr, Int(nnzHSS))
+  MHSS = unsafe_wrap(Array, MHSS_ptr, Int(nnzHSS))
+  HDD = unsafe_wrap(Array, HDD_ptr, Int(prob.nd * prob.nd))
+  iHSD = unsafe_wrap(Array, iHSD_ptr, Int(nnzHSD))
+  jHSD = unsafe_wrap(Array, jHSD_ptr, Int(nnzHSD))
+  MHSD = unsafe_wrap(Array, MHSD_ptr, Int(nnzHSD))
+  prob.eval_h(mode, x, obj_factor, lambda, iHSS, jHSS, MHSS, HDD, iHSD, jHSD, MHSD, prob)
+  # Done
+  return Int32(1)
 end
 
 ###########################################################################
@@ -251,7 +277,6 @@ function createProblem(ns::Int,
     n::Int, 
     x_L::Vector{Float64}, x_U::Vector{Float64},
     m::Int, g_L::Vector{Float64}, g_U::Vector{Float64},
-    nele_jac::Int, nele_hess::Int,
     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h = nothing, user_data = nothing)
     # Wrap callbacks
     prob = HiopProblem(n, m, ns, ns, 
@@ -266,11 +291,22 @@ function createProblem(ns::Int,
     prob.cprob.get_cons_info = @cfunction(get_cons_info_wrapper, Cint,
                     (Ptr{Clonglong}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cvoid}))
     prob.cprob.eval_f = @cfunction(eval_f_wrapper, Cint,
-                    (Clonglong, Ptr{Float64}, Cint, Ptr{Float64}, Ptr{Cvoid}))
+                    (Clonglong, Ptr{Cdouble}, Cint, Ptr{Cdouble}, Ptr{Cvoid}))
     prob.cprob.eval_grad_f = @cfunction(eval_grad_f_wrapper, Cint,
-                    (Clonglong, Ptr{Float64}, Cint, Ptr{Float64}, Ptr{Cvoid}))
+                    (Clonglong, Ptr{Cdouble}, Cint, Ptr{Cdouble}, Ptr{Cvoid}))
     prob.cprob.eval_cons = @cfunction(eval_g_wrapper, Cint,
-                    (Clonglong, Clonglong, Clonglong, Ptr{Clonglong}, Ptr{Float64}, Cint, Ptr{Float64}, Ptr{Cvoid}))
+                    (Clonglong, Clonglong, Clonglong, Ptr{Clonglong}, Ptr{Cdouble}, Cint, Ptr{Cdouble}, Ptr{Cvoid}))
+    prob.cprob.eval_Jac_cons = @cfunction(eval_jac_g_wrapper, Cint,
+                    (Clonglong, Clonglong, Clonglong, Ptr{Clonglong}, Ptr{Cdouble}, Cint, Clonglong, Clonglong,
+                    Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cvoid}))
+    prob.cprob.eval_Hess_Lagr = @cfunction(eval_h_wrapper, Cint,
+                    (Clonglong, Clonglong, 
+                    Ptr{Cdouble}, Cint, Cdouble,
+                    Ptr{Cdouble}, Cint, 
+                    Clonglong, Clonglong,
+                    Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, 
+                    Ptr{Cdouble}, 
+                    Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Ptr{Cvoid}))
     ret = ccall(:hiop_createProblem, Cint, 
     (Ptr{cHiopProblem}, Cint,
     ),
@@ -281,43 +317,7 @@ function createProblem(ns::Int,
     end
     return prob
 end
-# function createProblem(n::Int, x_L::Vector{Float64}, x_U::Vector{Float64},
-#     m::Int, g_L::Vector{Float64}, g_U::Vector{Float64},
-#     nele_jac::Int, nele_hess::Int,
-#     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h = nothing)
-#     @assert n == length(x_L) == length(x_U)
-#     @assert m == length(g_L) == length(g_U)
-#     # Wrap callbacks
-#     eval_f_cb = @cfunction(eval_f_wrapper, Cint,
-#     (Cint, Ptr{Float64}, Cint, Ptr{Float64}, Ptr{Cvoid}))
-#     eval_g_cb = @cfunction(eval_g_wrapper, Cint,
-#     (Cint, Ptr{Float64}, Cint, Cint, Ptr{Float64}, Ptr{Cvoid}))
-#     eval_grad_f_cb = @cfunction(eval_grad_f_wrapper, Cint,
-#     (Cint, Ptr{Float64}, Cint, Ptr{Float64}, Ptr{Cvoid}))
-#     eval_jac_g_cb = @cfunction(eval_jac_g_wrapper, Cint,
-#     (Cint, Ptr{Float64}, Cint, Cint, Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Float64}, Ptr{Cvoid}))
-#     eval_h_cb = @cfunction(eval_h_wrapper, Cint,
-#     (Cint, Ptr{Float64}, Cint, Float64, Cint, Ptr{Float64}, Cint, Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Float64}, Ptr{Cvoid}))
 
-#     ret = ccall((:CreateHiopProblem, libchiopInterface), Ptr{Cvoid},
-#     (Cint, Ptr{Float64}, Ptr{Float64},  # Num vars, var lower and upper bounds
-#     Cint, Ptr{Float64}, Ptr{Float64},  # Num constraints, con lower and upper bounds
-#     Cint, Cint,                        # Num nnz in constraint Jacobian and in Hessian
-#     Cint,                              # 0 for C, 1 for Fortran
-#     Ptr{Cvoid}, Ptr{Cvoid},              # Callbacks for eval_f, eval_g
-#     Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),  # Callbacks for eval_grad_f, eval_jac_g, eval_h
-#     n, x_L, x_U, m, g_L, g_U, nele_jac, nele_hess, 1,
-#     eval_f_cb, eval_g_cb, eval_grad_f_cb, eval_jac_g_cb, eval_h_cb)
-
-#     if ret == C_NULL
-#         error("IPOPT: Failed to construct problem.")
-#     else
-#         return HiopProblem(ret, n, m, eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h)
-#     end
-# end
-
-# TODO: Not even expose this? Seems dangerous, should just destruct
-# the HiopProblem object via GC
 function freeProblem(prob::HiopProblem)
     if prob.cprob.refcppHiop != C_NULL
         ccall(:hiop_destroyProblem, Cint, (Ptr{cHiopProblem},), pointer_from_objref(prob.cprob))
@@ -327,14 +327,7 @@ end
 
 function solveProblem(prob::HiopProblem)
     final_objval = [0.0]
-    @show prob.cprob.refcppHiop
     ret = ccall(:hiop_solveProblem, Cint, (Ptr{cHiopProblem}, ), pointer_from_objref(prob.cprob))
-    # ret = ccall((:IpoptSolve, libipopt),
-    # Cint, (Ptr{Cvoid}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Ptr{Float64}, Any),
-    # prob.ref, prob.x, prob.g, final_objval, prob.mult_g, prob.mult_x_L, prob.mult_x_U, prob)
-    # prob.obj_val = final_objval[1]
-    # prob.status = Int(ret)
-
     return Int(ret)
 end
 
