@@ -77,14 +77,14 @@ mutable struct HiopProblem
   user_data::Any 
   
 
-  function HiopProblem(ns::Int, nx_sparse::Int32, nx_dense::Int32,
+  function HiopProblem(ns::Int, nd::Int, nx_sparse::Int32, nx_dense::Int32,
     nnz_sparse_Jaceq::Int32, nnz_sparse_Jacineq::Int32, nnz_sparse_Hess_Lagr_SS::Int32, nnz_sparse_Hess_Lagr_SD::Int32,
     n::Int, x_L::Vector{Float64}, x_U::Vector{Float64},
     m::Int, g_L::Vector{Float64}, g_U::Vector{Float64},
     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h = nothing, user_data = nothing)
     # Wrap callbacks
     prob = new(cHiopProblem(C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL), 
-                n, m, ns, ns, 
+                n, m, ns, nd, 
                 nx_sparse, nx_dense, nnz_sparse_Jaceq, nnz_sparse_Jacineq, nnz_sparse_Hess_Lagr_SS, nnz_sparse_Hess_Lagr_SD,
                 zeros(Float64, n), x_L, x_U, 
                 zeros(Float64, m), g_L, g_U,

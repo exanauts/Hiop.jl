@@ -266,7 +266,7 @@ g_L[end]   = -2.;    g_U[end]   = 1e+20
 
 
 
-nlp = HiopProblem(ns,
+nlp = HiopProblem(ns, ns,
                     Int32(nx_sparse), Int32(nx_dense), Int32(nnz_sparse_Jaceq), Int32(nnz_sparse_Jacineq), Int32(nnz_sparse_Hess_Lagr_SS), Int32(nnz_sparse_Hess_Lagr_SD),
                     n, x_L, x_U, 
                     m, g_L, g_U,
