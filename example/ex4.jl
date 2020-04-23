@@ -4,7 +4,7 @@ using LinearAlgebra
 
 function eval_f(x::Vector{Float64}, prob::HiopProblem) 
   xrange = 1:prob.ns
-  yrange = 2*prob.ns+1:3*prob.ns 
+  yrange = 2*prob.ns+1:2*prob.ns + prob.nd
   srange = prob.ns+1:2*prob.ns
   return obj = 0.5 * ( sum(x[xrange] .* (x[xrange] .- 1.))
               + sum((prob.user_data.Q * x[yrange]) .* x[yrange])
@@ -14,7 +14,7 @@ end
 
 function eval_g(x::Vector{Float64}, g::Vector{Float64}, prob::HiopProblem)
   xrange = 1:prob.ns
-  yrange = 2*prob.ns+1:3*prob.ns 
+  yrange = 2*prob.ns+1:2*prob.ns + prob.nd
   srange = prob.ns+1:2*prob.ns
 
   @assert 3+prob.ns == prob.m
@@ -47,7 +47,7 @@ end
 
 function eval_grad_f(x::Vector{Float64}, grad_f::Vector{Float64}, prob::HiopProblem)
   xrange = 1:prob.ns
-  yrange = 2*prob.ns+1:3*prob.ns 
+  yrange = 2*prob.ns+1:2*prob.ns + prob.nd
   srange = prob.ns+1:2*prob.ns
 
   grad_f[xrange] .= x[xrange] .- 0.5
@@ -177,31 +177,38 @@ struct User_data
   buf_y::Vector{Float64}
 end
 
+if length(ARGS) == 2
+  ns = parse(Int, ARGS[1])
+  nd = parse(Int, ARGS[2])
+elseif length(ARGS) == 0
+  ns = 100
+  nd = 100
+else
+  error("Wrong number of arguments.")
+end
 
-ns = 100
-
-Q = Matrix{Float64}(undef, ns, ns)
+Q = Matrix{Float64}(undef, nd, nd)
 Q .= 1e-8
-for i in 1:ns  
+for i in 1:nd  
   Q[i,i] += 2.
 end
-for i in 2:ns-1  
+for i in 2:nd-1  
   Q[i,i+1] += 1.
   Q[i+1,i] += 1.
 end
 
-Md = Matrix{Float64}(undef, ns, ns)
+Md = Matrix{Float64}(undef, ns, nd)
 Md .= -1.0
-buf_y = Vector{Float64}(undef, ns)
+buf_y = Vector{Float64}(undef, nd)
 
 user_data = User_data(ns, Q, Md, buf_y)
 
-n = 3*ns
+n = 2*ns + nd
 m = ns+3
 nx_sparse = 2*ns;
-nx_dense = ns;
+nx_dense = nd;
 nnz_sparse_Jaceq = 2*ns;
-nnz_sparse_Jacineq = 1+ns+1+1;
+nnz_sparse_Jacineq = 3+ns;
 nnz_sparse_Hess_Lagr_SS = 2*ns;
 nnz_sparse_Hess_Lagr_SD = 0;
 
@@ -225,7 +232,7 @@ end
 # xupp_[2*ns] = -4.;
 # for(int i=2*ns+1; i<n; ++i) xlow_[i] = -1e+20;
 x_L[2*ns+1] = -4.
-for i in 2*ns+2:3*ns
+for i in 2*ns+2:n
   x_L[i] = -1e+20
 end
 
@@ -243,7 +250,7 @@ end
 # xupp_[2*ns] = 4.;
 # for(int i=2*ns+1; i<n; ++i) xupp_[i] = +1e+20;
 x_U[2*ns+1] = 4.
-for i in 2*ns+2:3*ns
+for i in 2*ns+2:n
   x_U[i] = 1e+20
 end
 
@@ -255,7 +262,7 @@ g_L[end]   = -2.;    g_U[end]   = 1e+20
 
 
 
-nlp = HiopProblem(ns, ns,
+nlp = HiopProblem(ns, nd,
                     Int32(nx_sparse), Int32(nx_dense), Int32(nnz_sparse_Jaceq), Int32(nnz_sparse_Jacineq), Int32(nnz_sparse_Hess_Lagr_SS), Int32(nnz_sparse_Hess_Lagr_SD),
                     n, x_L, x_U, 
                     m, g_L, g_U,

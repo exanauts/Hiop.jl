@@ -49,8 +49,8 @@ mutable struct HiopProblem
   cprob::cHiopProblem  # Reference to the C data structure
   n::Int64  # Num vars
   m::Int64  # Num cons
-  nd::Int64 # Dense whatever
   ns::Int64 # Sparse whatever
+  nd::Int64 # Dense whatever
   nx_sparse::Int32
   nx_dense::Int32 
   nnz_sparse_Jaceq::Int32
@@ -269,7 +269,7 @@ function eval_jac_g_wrapper(n::Clonglong, m::Clonglong,
     jJacS = unsafe_wrap(Array, jJacS_ptr, Int(nnzJacS))
     MJacS = unsafe_wrap(Array, MJacS_ptr, Int(nnzJacS))
     # @show n, m, nsparse, ndense, prob.ns, prob.nd
-    JacD = unsafe_wrap(Array, JacD_ptr, prob.m * prob.ns)
+    JacD = unsafe_wrap(Array, JacD_ptr, prob.m * prob.nd)
     prob.eval_jac_g(mode, x, iJacS, jJacS, MJacS, JacD, prob)
     # Done
     return Int32(1)
