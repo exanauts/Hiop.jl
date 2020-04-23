@@ -13,6 +13,7 @@ extern "C" {
   typedef struct cHiopProblem {
     hiopNlpMDS * refcppHiop;
     void *jprob;
+    int (*get_starting_point)(long long n_, double* x0, void* jprob); 
     int (*get_prob_sizes)(long long* n_, long long* m_, void* jprob); 
     int (*get_vars_info)(long long n, double *xlow_, double* xupp_, void* jprob);
     int (*get_cons_info)(long long m, double *clow_, double* cupp_, void* jprob);
@@ -58,6 +59,11 @@ class cppJuliaProblem : public hiopInterfaceMDS
     bool get_prob_sizes(long long& n_, long long& m_) 
     {
       cprob->get_prob_sizes(&n_, &m_, cprob->jprob);
+      return true;
+    };
+    bool get_starting_point(const long long& n, double *x0)
+    {
+      cprob->get_starting_point(n, x0, cprob->jprob);
       return true;
     };
     bool get_vars_info(const long long& n, double *xlow_, double* xupp_, NonlinearityType* type)

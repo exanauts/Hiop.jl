@@ -271,5 +271,6 @@ nlp = HiopProblem(ns, ns,
                     n, x_L, x_U, 
                     m, g_L, g_U,
                     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, user_data)
+nlp.x0 .= 1.0
 
 solveProblem(nlp)

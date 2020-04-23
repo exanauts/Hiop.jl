@@ -1,6 +1,7 @@
 typedef struct cHiopProblem {
   void * refcppHiop; // Pointer to the cpp object
   void *jprob; // pointer to the julia problem object
+  int (*get_starting_point)(long long n_, double* x0, void* jprob); 
   int (*get_prob_sizes)(long long* n_, long long* m_, void* jprob); 
   int (*get_vars_info)(long long n, double *xlow_, double* xupp_, void* jprob);
   int (*get_cons_info)(long long m, double *clow_, double* cupp_, void* jprob);

@@ -8,11 +8,10 @@ export HiopProblem
 function __init__()
   try
     path_to_lib = ENV["JULIA_HIOP_LIBRARY_PATH"]
-    # Libdl.dlopen(path_to_lib * "/lib/libhiop.so", Libdl.RTLD_GLOBAL)
     Libdl.dlopen("libf77blas.so", Libdl.RTLD_GLOBAL)
     Libdl.dlopen("liblapack.so", Libdl.RTLD_GLOBAL)
     Libdl.dlopen("libhiop.so", Libdl.RTLD_GLOBAL)
-    Libdl.dlopen("libchiopInterface.so", Libdl.RTLD_GLOBAL)
+    Libdl.dlopen(joinpath(dirname(@__FILE__), "../deps/libchiopInterface.so"), Libdl.RTLD_GLOBAL)
   catch
     @warn("Could not load HiOp shared library. Make sure the ENV variable 'JULIA_HIOP_LIBRARY_PATH' points to its location.")
     rethrow()
@@ -22,6 +21,7 @@ end
 mutable struct cHiopProblem
   refcppHiop::Ptr{Cvoid}
   jprob::Ptr{Cvoid}
+  get_starting_point::Ptr{Cvoid}
   get_prob_sizes::Ptr{Cvoid}
   get_vars_info::Ptr{Cvoid}
   get_cons_info::Ptr{Cvoid}
@@ -33,6 +33,7 @@ mutable struct cHiopProblem
   eval_Hess_Lagr::Ptr{Cvoid}
 end
   # Forward declarations coming after the constructor
+  function get_starting_point_wrapper end
   function get_sparse_dense_blocks_info_wrapper end
   function get_prob_sizes_wrapper end
   function get_vars_info_wrapper end
@@ -74,6 +75,7 @@ mutable struct HiopProblem
   eval_grad_f::Function
   eval_jac_g::Function
   eval_h  # Can be nothing
+  x0::Vector{Float64}
   user_data::Any 
   
 
@@ -83,14 +85,17 @@ mutable struct HiopProblem
     m::Int, g_L::Vector{Float64}, g_U::Vector{Float64},
     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h = nothing, user_data = nothing)
     # Wrap callbacks
-    prob = new(cHiopProblem(C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL), 
+    prob = new(cHiopProblem(C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL), 
                 n, m, ns, nd, 
                 nx_sparse, nx_dense, nnz_sparse_Jaceq, nnz_sparse_Jacineq, nnz_sparse_Hess_Lagr_SS, nnz_sparse_Hess_Lagr_SD,
                 zeros(Float64, n), x_L, x_U, 
                 zeros(Float64, m), g_L, g_U,
                 zeros(Float64,m),
                 zeros(Float64,n), zeros(Float64,n), 0.0, 0,
-                eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, user_data)
+                eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h, zeros(Float64, n), user_data)
+
+    prob.cprob.get_starting_point = @cfunction(get_starting_point_wrapper, Cint,
+                    (Clonglong, Ptr{Cdouble}, Ptr{Cvoid}))
     prob.cprob.get_sparse_dense_blocks_info = @cfunction(get_sparse_dense_blocks_info_wrapper, Cint,
                     (Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cint}, Ptr{Cvoid}))
     prob.cprob.get_prob_sizes = @cfunction(get_prob_sizes_wrapper, Cint,
@@ -152,7 +157,13 @@ ApplicationReturnStatus = Dict(
 ###########################################################################
 # Callback wrappers
 ###########################################################################
-# Objective (eval_f)
+
+function get_starting_point_wrapper(n::Clonglong, x0_::Ptr{Cdouble}, prob_::Ptr{Cvoid})
+  prob = unsafe_pointer_to_objref(prob_)::HiopProblem
+  x0 = unsafe_wrap(Array{Float64}, x0_, prob.n)
+  x0 .= prob.x0
+  return Int32(1)
+end
 function get_prob_sizes_wrapper(n_::Ptr{Clonglong}, m_::Ptr{Clonglong}, prob_::Ptr{Cvoid})
   prob = unsafe_pointer_to_objref(prob_)::HiopProblem
   n = unsafe_wrap(Array{Int64}, n_, 1)
