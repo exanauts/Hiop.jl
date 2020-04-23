@@ -109,9 +109,9 @@ mutable struct HiopProblem
     prob.cprob.eval_grad_f = @cfunction(eval_grad_f_wrapper, Cint,
                     (Clonglong, Ptr{Cdouble}, Cint, Ptr{Cdouble}, Ptr{Cvoid}))
     prob.cprob.eval_cons = @cfunction(eval_g_wrapper, Cint,
-                    (Clonglong, Clonglong, Clonglong, Ptr{Clonglong}, Ptr{Cdouble}, Cint, Ptr{Cdouble}, Ptr{Cvoid}))
+                    (Clonglong, Clonglong, Ptr{Cdouble}, Cint, Ptr{Cdouble}, Ptr{Cvoid}))
     prob.cprob.eval_Jac_cons = @cfunction(eval_jac_g_wrapper, Cint,
-                    (Clonglong, Clonglong, Clonglong, Ptr{Clonglong}, Ptr{Cdouble}, Cint, Clonglong, Clonglong,
+                    (Clonglong, Clonglong, Ptr{Cdouble}, Cint, Clonglong, Clonglong,
                     Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Ptr{Cdouble}, Ptr{Cvoid}))
     prob.cprob.eval_Hess_Lagr = @cfunction(eval_h_wrapper, Cint,
                     (Clonglong, Clonglong, 
@@ -225,14 +225,13 @@ function eval_f_wrapper(n::Clonglong, x_ptr::Ptr{Float64}, new_x::Cint, obj_ptr:
 end
 
 # Constraints (eval_g)
-function eval_g_wrapper(n::Clonglong, m::Clonglong, num_cons::Clonglong, idx_cons_ptr::Ptr{Clonglong}, x_ptr::Ptr{Float64}, new_x::Cint, g_ptr::Ptr{Float64}, user_data::Ptr{Cvoid})
+function eval_g_wrapper(n::Clonglong, m::Clonglong, x_ptr::Ptr{Float64}, new_x::Cint, g_ptr::Ptr{Float64}, user_data::Ptr{Cvoid})
   # Extract Julia the problem from the pointer
   prob = unsafe_pointer_to_objref(user_data)::HiopProblem
   x = unsafe_wrap(Array{Float64}, x_ptr, prob.n)
-  idx_cons = unsafe_wrap(Array{Int64}, idx_cons_ptr, num_cons)
   # Calculate the new constraint values
   new_g = unsafe_wrap(Array,g_ptr, Int(m))
-  prob.eval_g(x, idx_cons, new_g, prob)
+  prob.eval_g(x, new_g, prob)
   # Done
   return Int32(1)
 end
@@ -249,7 +248,7 @@ function eval_grad_f_wrapper(n::Clonglong, x_ptr::Ptr{Float64}, new_x::Cint, gra
 end
 
 # Jacobian (eval_jac_g)
-function eval_jac_g_wrapper(n::Clonglong, m::Clonglong, num_cons::Clonglong, idx_cons_ptr::Ptr{Clonglong},
+function eval_jac_g_wrapper(n::Clonglong, m::Clonglong,
     x_ptr::Ptr{Cdouble}, new_x::Cint, nsparse::Clonglong, ndense::Clonglong, nnzJacS::Cint, iJacS_ptr::Ptr{Cint}, 
     jJacS_ptr::Ptr{Cint}, MJacS_ptr::Ptr{Cdouble}, JacD_ptr::Ptr{Cdouble}, user_data::Ptr{Cvoid})
     # Extract Julia the problem from the pointer
@@ -266,12 +265,12 @@ function eval_jac_g_wrapper(n::Clonglong, m::Clonglong, num_cons::Clonglong, idx
         push!(mode, :Dense)
     end
     x = unsafe_wrap(Array, x_ptr, Int(n))
-    idx_cons = unsafe_wrap(Array, idx_cons_ptr, Int(num_cons))
     iJacS = unsafe_wrap(Array, iJacS_ptr, Int(nnzJacS))
     jJacS = unsafe_wrap(Array, jJacS_ptr, Int(nnzJacS))
     MJacS = unsafe_wrap(Array, MJacS_ptr, Int(nnzJacS))
-    JacD = unsafe_wrap(Array, JacD_ptr, Int(num_cons) * prob.nd)
-    prob.eval_jac_g(mode, x, idx_cons, iJacS, jJacS, MJacS, JacD, prob)
+    # @show n, m, nsparse, ndense, prob.ns, prob.nd
+    JacD = unsafe_wrap(Array, JacD_ptr, prob.m * prob.ns)
+    prob.eval_jac_g(mode, x, iJacS, jJacS, MJacS, JacD, prob)
     # Done
     return Int32(1)
 end

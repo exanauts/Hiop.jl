@@ -12,38 +12,36 @@ function eval_f(x::Vector{Float64}, prob::HiopProblem)
               )
 end
 
-function eval_g(x::Vector{Float64}, idx_cons::Vector{Int64}, g::Vector{Float64}, prob::HiopProblem)
+function eval_g(x::Vector{Float64}, g::Vector{Float64}, prob::HiopProblem)
   xrange = 1:prob.ns
   yrange = 2*prob.ns+1:3*prob.ns 
   srange = prob.ns+1:2*prob.ns
+
+  @assert 3+prob.ns == prob.m
   
   s = x[srange]
-  isEq = false
-  for row in 1:length(idx_cons)
-    con_idx = idx_cons[row] + 1
-    if con_idx <= prob.ns
+  y = x[yrange]
+  for con_idx in 1:prob.m
+    if con_idx - 1 < prob.ns
       g[con_idx] = x[con_idx] + s[con_idx]
-      isEq = true
     else
-      conineq_idx = con_idx - prob.ns
-      if conineq_idx == 1
-        g[conineq_idx] = x[1]
-        g[conineq_idx] += sum(x[srange])
-        g[conineq_idx] += sum(x[yrange])
-      end
-      if conineq_idx == 2
-        g[conineq_idx] = x[2]
-        g[conineq_idx] += sum(x[yrange])
-      end
-      if conineq_idx == 3
-        g[conineq_idx] = x[3]
-        g[conineq_idx] += sum(x[yrange])
+      @assert con_idx - 1 < prob.ns + 3
+      if con_idx - 1 == prob.ns
+        g[con_idx] = x[1]
+        g[con_idx] += sum(x[srange])
+        g[con_idx] += sum(x[yrange])
+      elseif con_idx - 1 == prob.ns + 1
+        g[con_idx] = x[2]
+        g[con_idx] += sum(x[yrange])
+      elseif con_idx - 1 == prob.ns + 2
+        g[con_idx] = x[3]
+        g[con_idx] += sum(x[yrange])
+      else
+        @assert false
       end
     end
   end
-  if isEq
-    g[1:prob.ns] += prob.user_data.Md * x[yrange]
-  end
+  g[1:prob.ns] += prob.user_data.Md * x[yrange]
   return Int32(1)
 end
 
@@ -58,40 +56,42 @@ function eval_grad_f(x::Vector{Float64}, grad_f::Vector{Float64}, prob::HiopProb
   return Int32(1)
 end
 
-function eval_jac_g(mode::Vector{Symbol}, x::Vector{Float64}, idx_cons::Vector{Int64},
+function eval_jac_g(mode::Vector{Symbol}, x::Vector{Float64},
   iJacS::Vector{Int32}, jJacS::Vector{Int32}, MJacS::Vector{Float64}, 
   JacD::Vector{Float64}, prob::HiopProblem)
+  @assert m == prob.ns + 3
   if :Structure in mode
     nnzit = 1
-    for i in 1:length(idx_cons)
-      con_idx = idx_cons[i]
-      if con_idx < prob.ns
-        # x
-        iJacS[nnzit] = con_idx
-        jJacS[nnzit] = con_idx
+    for con_idx in 1:prob.ns
+      # x
+      iJacS[nnzit] = con_idx - 1
+      jJacS[nnzit] = con_idx - 1
+      nnzit += 1
+      # y
+      iJacS[nnzit] = con_idx - 1
+      jJacS[nnzit] = con_idx + prob.ns - 1
+      nnzit += 1
+    end
+    for con_idx in prob.ns+1:m
+      if con_idx == prob.ns + 1
+        # wrt x1
+        iJacS[nnzit] = con_idx - 1
+        jJacS[nnzit] = 0
         nnzit += 1
-        # y
-        iJacS[nnzit] = con_idx
-        jJacS[nnzit] = con_idx + prob.ns
-        nnzit += 1
+        # wrt s
+        for i in 1:prob.ns
+          iJacS[nnzit] = con_idx - 1
+          jJacS[nnzit] = prob.ns + i - 1
+          nnzit += 1
+        end
       else
-        if con_idx - prob.ns == 0
-          # wrt x1
-          iJacS[nnzit] = 0
-          jJacS[nnzit] = 0
+        # wrt x2 or x3
+        if con_idx-prob.ns - 1 == 1 || con_idx-prob.ns - 1 == 2
+          iJacS[nnzit] = con_idx - 1
+          jJacS[nnzit] = con_idx - prob.ns - 1
           nnzit += 1
-          # wrt s
-          for i in 1:prob.ns
-            iJacS[nnzit] = 0
-            jJacS[nnzit] = prob.ns + i - 1
-            nnzit += 1
-          end
         else
-          # wrt x2 or x3
-          @assert con_idx-prob.ns == 1 || con_idx-prob.ns == 2
-          iJacS[nnzit] = con_idx - prob.ns
-          jJacS[nnzit] = con_idx - prob.ns
-          nnzit += 1
+          @assert false
         end
       end
     end
@@ -100,57 +100,46 @@ function eval_jac_g(mode::Vector{Symbol}, x::Vector{Float64}, idx_cons::Vector{I
   # values for sparse Jacobian if requested by the solver
   if :Sparse in mode
     nnzit = 1
-    for i in 1:length(idx_cons)
-      con_idx = idx_cons[i]
-      if con_idx < prob.ns
-        # sparse Jacobian EQ w.r.t. x and s
-        # x
+    for con_idx in 1:prob.ns
+      # sparse Jacobian EQ w.r.t. x and s
+      # x
+      MJacS[nnzit] = 1.0
+      nnzit += 1
+      # s
+      MJacS[nnzit] = 1.0
+      nnzit += 1
+    end
+    for con_idx in prob.ns+1:m
+	     # parse Jacobian INEQ w.r.t x and s
+      if con_idx - prob.ns - 1 == 0
+        # wrt x1
         MJacS[nnzit] = 1.0
         nnzit += 1
-        # s
-        MJacS[nnzit] = 1.0
-        nnzit += 1
+        for i in 1:prob.ns
+          MJacS[nnzit] = 1.0
+          nnzit += 1
+        end
       else
-        if con_idx - prob.ns == 0
-          # wrt x1
+        # wrt x2 or x3
+        if con_idx - prob.ns - 1 == 1 || con_idx - prob.ns - 1 == 2
           MJacS[nnzit] = 1.0
           nnzit += 1
-          for i in 1:prob.ns
-            MJacS[nnzit] = 1.0
-            nnzit += 1
-          end
         else
-          # wrt x2 or x3
-          @assert con_idx-prob.ns == 1 || con_idx-prob.ns == 2
-          MJacS[nnzit] = 1.0
-          nnzit += 1
+          @assert false
         end
       end
     end
     @assert nnzit == length(iJacS) + 1
   end
   if :Dense in mode
-    # dense Jacobian w.r.t y
-    isEq = false
-    for i in 1:length(idx_cons)
-      con_idx = idx_cons[i]
-      if con_idx < prob.ns
-        isEq = true
-        @assert length(idx_cons) == prob.ns
-        continue
-      else
-        # do an in place fill-in for the ineq Jacobian corresponding to e^T
-        @assert con_idx - prob.ns == 0 || con_idx - prob.ns == 1 || con_idx - prob.ns == 2
-        @assert length(idx_cons) == 3
-        JacDmat = reshape(JacD, (3, prob.nd))
-        for i in 1:prob.nd
-          JacDmat[con_idx - prob.ns + 1, i] = 1
-        end
+    Mdvec = reshape(Md,(prob.ns * prob.nd,))
+    JacD[1:prob.ns * prob.nd] .= Mdvec
+    @assert prob.ns + 3 == prob.m
+    JacDmat = reshape(JacD, (prob.nd, prob.m))
+    for i in 1:3
+      for j in 1:prob.nd
+      JacDmat[j,prob.ns + i] = 1.0
       end
-    end
-    if isEq
-      Mdvec = reshape(Md,(size(prob.user_data.Md,1) * size(prob.user_data.Md,2),))
-      JacD .= Mdvec
     end
   end
   return Int32(1)

@@ -8,7 +8,6 @@ typedef struct cHiopProblem {
   int (*eval_f)(int n, double* x, int new_x, double* obj, void* jprob);
   int (*eval_grad_f)(long long n, double* x, int new_x, double* gradf, void* jprob);
   int (*eval_cons)(long long n, long long m,
-    const long long num_cons, long long* idx_cons,  
     double* x, int new_x, 
     double* cons, void* jprob);
   int (*get_sparse_dense_blocks_info)(int* nx_sparse, int* nx_dense,
