@@ -1,3 +1,4 @@
+using Hiop
 using MathOptInterface
 const MOI = MathOptInterface
 const MOIT = MOI.Test
@@ -6,7 +7,7 @@ const MOIB = MOI.Bridges
 
 # Without fixed_variable_treatment set, duals are not computed for variables
 # that have lower_bound == upper_bound.
-const optimizer = Ipopt.Optimizer()
+const optimizer = Hiop.Optimizer()
 
 MOI.set(optimizer, MOI.RawParameter("print_level"), 0)
 MOI.set(optimizer, MOI.RawParameter("fixed_variable_treatment"),
@@ -21,7 +22,7 @@ const config_no_duals = MOIT.TestConfig(atol=1e-4, rtol=1e-4, duals=false,
                                         optimal_status=MOI.LOCALLY_SOLVED)
 
 @testset "SolverName" begin
-    @test MOI.get(optimizer, MOI.SolverName()) == "Ipopt"
+    @test MOI.get(optimizer, MOI.SolverName()) == "Hiop"
 end
 
 @testset "supports_default_copy_to" begin
@@ -31,7 +32,7 @@ end
 
 @testset "Unit" begin
     bridged = MOIB.full_bridge_optimizer(
-        Ipopt.Optimizer(print_level=0, fixed_variable_treatment="make_constraint"),
+        Hiop.Optimizer(print_level=0, fixed_variable_treatment="make_constraint"),
         Float64)
     # A number of test cases are excluded because loadfromstring! works only
     # if the solver supports variable and constraint names.
@@ -66,32 +67,32 @@ end
     MOIT.unittest(bridged, config, exclude)
 end
 
-@testset "MOI Linear tests" begin
-    exclude = ["linear8a", # Behavior in infeasible case doesn't match test.
-               "linear12", # Same as above.
-               "linear8b", # Behavior in unbounded case doesn't match test.
-               "linear8c", # Same as above.
-               "linear7",  # VectorAffineFunction not supported.
-               "linear15", # VectorAffineFunction not supported.
-               ]
-    model_for_ipopt = MOIU.UniversalFallback(MOIU.Model{Float64}())
-    linear_optimizer = MOI.Bridges.Constraint.SplitInterval{Float64}(
-                         MOIU.CachingOptimizer(model_for_ipopt, optimizer))
-    MOIT.contlineartest(linear_optimizer, config_no_duals, exclude)
-end
+# @testset "MOI Linear tests" begin
+#     exclude = ["linear8a", # Behavior in infeasible case doesn't match test.
+#                "linear12", # Same as above.
+#                "linear8b", # Behavior in unbounded case doesn't match test.
+#                "linear8c", # Same as above.
+#                "linear7",  # VectorAffineFunction not supported.
+#                "linear15", # VectorAffineFunction not supported.
+#                ]
+#     model_for_ipopt = MOIU.UniversalFallback(MOIU.Model{Float64}())
+#     linear_optimizer = MOI.Bridges.Constraint.SplitInterval{Float64}(
+#                          MOIU.CachingOptimizer(model_for_ipopt, optimizer))
+#     MOIT.contlineartest(linear_optimizer, config_no_duals, exclude)
+# end
 
-MOI.empty!(optimizer)
+# MOI.empty!(optimizer)
 
-@testset "MOI QP/QCQP tests" begin
-    qp_optimizer = MOIU.CachingOptimizer(MOIU.Model{Float64}(), optimizer)
-    MOIT.qptest(qp_optimizer, config)
-    exclude = ["qcp1", # VectorAffineFunction not supported.
-              ]
-    MOIT.qcptest(qp_optimizer, config_no_duals, exclude)
-end
+# @testset "MOI QP/QCQP tests" begin
+#     qp_optimizer = MOIU.CachingOptimizer(MOIU.Model{Float64}(), optimizer)
+#     MOIT.qptest(qp_optimizer, config)
+#     exclude = ["qcp1", # VectorAffineFunction not supported.
+#               ]
+#     MOIT.qcptest(qp_optimizer, config_no_duals, exclude)
+# end
 
-MOI.empty!(optimizer)
+# MOI.empty!(optimizer)
 
-@testset "MOI NLP tests" begin
-    MOIT.nlptest(optimizer, config)
-end
+# @testset "MOI NLP tests" begin
+#     MOIT.nlptest(optimizer, config)
+# end

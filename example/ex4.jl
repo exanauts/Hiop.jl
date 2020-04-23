@@ -1,5 +1,4 @@
-include("../src/Hiop.jl")
-using .Hiop
+using Hiop
 using LinearAlgebra
 
 function eval_f(x::Vector{Float64}, prob::HiopProblem) 
@@ -180,12 +179,16 @@ end
 if length(ARGS) == 2
   ns = parse(Int, ARGS[1])
   nd = parse(Int, ARGS[2])
+elseif @isdefined(ns) && @isdefined(nd)
+  println("ns and nd predefined.")
 elseif length(ARGS) == 0
   ns = 100
   nd = 100
 else
   error("Wrong number of arguments.")
 end
+
+println("ns: $ns, nd: $nd")
 
 Q = Matrix{Float64}(undef, nd, nd)
 Q .= 1e-8

@@ -130,7 +130,7 @@ function MOI.copy_to(model::Optimizer, src::MOI.ModelLike; copy_names = false)
     return MOIU.default_copy_to(model, src, copy_names)
 end
 
-MOI.get(::Optimizer, ::MOI.SolverName) = "Ipopt"
+MOI.get(::Optimizer, ::MOI.SolverName) = "Hiop"
 
 MOI.get(model::Optimizer, ::MOI.NumberOfVariables) = length(model.variable_info)
 
@@ -957,7 +957,7 @@ function MOI.get(model::Optimizer, ::MOI.TerminationStatus)
     elseif status == :Insufficient_Memory
         return MOI.MEMORY_LIMIT
     else
-        error("Unrecognized Ipopt status $status")
+        error("Unrecognized Hiopt status $status")
     end
 end
 

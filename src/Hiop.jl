@@ -217,9 +217,9 @@ function eval_f_wrapper(n::Clonglong, x_ptr::Ptr{Float64}, new_x::Cint, obj_ptr:
   # Extract Julia the problem from the pointer
   prob = unsafe_pointer_to_objref(prob_)::HiopProblem
   # Calculate the new objective
-  new_obj = convert(Float64, prob.eval_f(unsafe_wrap(Array,x_ptr, Int(n)), prob))::Float64
+  prob.obj_val = convert(Float64, prob.eval_f(unsafe_wrap(Array,x_ptr, Int(n)), prob))::Float64
   # Fill out the pointer
-  unsafe_store!(obj_ptr, new_obj)
+  unsafe_store!(obj_ptr, prob.obj_val)
   # Done
   return Int32(1)
 end
