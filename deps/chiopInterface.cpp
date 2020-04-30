@@ -23,7 +23,8 @@ int hiop_solveProblem(cHiopProblem *prob) {
   hiopSolveStatus status;
   hiopAlgFilterIPMNewton solver(prob->refcppHiop);
   status = solver.run();
-  double obj_value = solver.getObjective();
+  prob->obj_value = solver.getObjective();
+  solver.getSolution(prob->solution);
   return 0;
 }
 

@@ -1,2 +1,6 @@
 Manifest.toml
 /deps/build.log
+*.so
+*.o
+/deps/test
+.vscode

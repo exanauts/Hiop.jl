@@ -21,6 +21,8 @@ end
 mutable struct cHiopProblem
   refcppHiop::Ptr{Cvoid}
   jprob::Ptr{Cvoid}
+  solution::Ptr{Cdouble}
+  obj_value::Cdouble
   get_starting_point::Ptr{Cvoid}
   get_prob_sizes::Ptr{Cvoid}
   get_vars_info::Ptr{Cvoid}
@@ -55,8 +57,10 @@ mutable struct HiopProblem
   nx_dense::Int32 
   nnz_sparse_Jaceq::Int32
   nnz_sparse_Jacineq::Int32
+  jacidxlist::Array{Int64}
   nnz_sparse_Hess_Lagr_SS::Int32
   nnz_sparse_Hess_Lagr_SD::Int32
+  hesidxlist::Array{Int64}
   x::Vector{Float64}  # Starting and final solution
   x_L::Vector{Float64}  # Starting and final solution
   x_U::Vector{Float64}  # Starting and final solution
@@ -85,9 +89,11 @@ mutable struct HiopProblem
     m::Int, g_L::Vector{Float64}, g_U::Vector{Float64},
     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h = nothing, user_data = nothing)
     # Wrap callbacks
-    prob = new(cHiopProblem(C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL), 
+    prob = new(cHiopProblem(C_NULL, C_NULL, C_NULL, 0.0, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL), 
                 n, m, ns, nd, 
-                nx_sparse, nx_dense, nnz_sparse_Jaceq, nnz_sparse_Jacineq, nnz_sparse_Hess_Lagr_SS, nnz_sparse_Hess_Lagr_SD,
+                nx_sparse, nx_dense, 
+                nnz_sparse_Jaceq, nnz_sparse_Jacineq, Vector{Int64}(),
+                nnz_sparse_Hess_Lagr_SS, nnz_sparse_Hess_Lagr_SD, Vector{Int64}(),
                 zeros(Float64, n), x_L, x_U, 
                 zeros(Float64, m), g_L, g_U,
                 zeros(Float64,m),
@@ -122,7 +128,6 @@ mutable struct HiopProblem
                     Ptr{Cdouble}, 
                     Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Ptr{Cvoid}))
     prob.cprob.jprob = pointer_from_objref(prob)
-    @show prob.cprob.jprob
     ret = ccall(:hiop_createProblem, Cint, (Ptr{cHiopProblem}, Cint,), pointer_from_objref(prob.cprob), ns)
     if ret != 0 
         error("HiOp: Failed to construct problem.")
@@ -306,7 +311,11 @@ function eval_h_wrapper(n::Clonglong, m::Clonglong,
   iHSD = unsafe_wrap(Array, iHSD_ptr, Int(nnzHSD))
   jHSD = unsafe_wrap(Array, jHSD_ptr, Int(nnzHSD))
   MHSD = unsafe_wrap(Array, MHSD_ptr, Int(nnzHSD))
-  prob.eval_h(mode, x, obj_factor, lambda, iHSS, jHSS, MHSS, HDD, iHSD, jHSD, MHSD, prob)
+  if prob.eval_h != nothing
+    prob.eval_h(mode, x, obj_factor, lambda, iHSS, jHSS, MHSS, HDD, iHSD, jHSD, MHSD, prob)
+  # else
+  #   MHSS .= 0.0
+  end
   # Done
   return Int32(1)
 end
@@ -324,7 +333,9 @@ end
 
 function solveProblem(prob::HiopProblem)
     final_objval = [0.0]
+    prob.cprob.solution = pointer(prob.x) 
     ret = ccall(:hiop_solveProblem, Cint, (Ptr{cHiopProblem}, ), pointer_from_objref(prob.cprob))
+    prob.obj_val = prob.cprob.obj_value
     return Int(ret)
 end
 

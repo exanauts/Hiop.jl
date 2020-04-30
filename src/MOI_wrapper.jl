@@ -807,41 +807,76 @@ function MOI.optimize!(model::Optimizer)
         objective_scale = 0.0
     end
 
-    eval_f_cb(x) = objective_scale * eval_objective(model, x)
+    function eval_f_cb(x::Vector{Float64}, prob::HiopProblem) 
+        objective_scale * eval_objective(model, x)
+    end
 
     # Objective gradient callback
-    function eval_grad_f_cb(x, grad_f)
+    function eval_grad_f_cb(x::Vector{Float64}, grad_f::Vector{Float64}, prob::HiopProblem)
         eval_objective_gradient(model, grad_f, x)
         rmul!(grad_f,objective_scale)
+        return Int32(1)
     end
 
     # Constraint value callback
-    eval_g_cb(x, g) = eval_constraint(model, g, x)
-
-    # Jacobian callback
-    function eval_jac_g_cb(x, mode, rows, cols, values)
-        if mode == :Structure
-            for i in 1:length(jacobian_sparsity)
-                rows[i] = jacobian_sparsity[i][1]
-                cols[i] = jacobian_sparsity[i][2]
-            end
-        else
-            eval_constraint_jacobian(model, values, x)
-        end
+    function eval_g_cb(x::Vector{Float64}, g::Vector{Float64}, prob::HiopProblem)
+        eval_constraint(model, g, x)
+        return Int32(1)
     end
 
+    # Jacobian callback
+    # function eval_jac_g_cb(x, mode, rows, cols, values)
+    function eval_jac_g_cb(mode::Vector{Symbol}, x::Vector{Float64},
+        iJacS::Vector{Int32}, jJacS::Vector{Int32}, MJacS::Vector{Float64}, 
+        JacD::Vector{Float64}, prob::HiopProblem)
+        # @show mode
+
+        if :Structure in mode
+            # @show jacobian_sparsity
+            for i in 1:length(jacobian_sparsity)
+                # row
+                iJacS[i] = jacobian_sparsity[prob.jacidxlist[i]][1] - 1
+                # col
+                jJacS[i] = jacobian_sparsity[prob.jacidxlist[i]][2] - 1
+            end
+        end
+        if :Sparse in mode
+            idxlist = Vector{Int64}(undef, length(jacobian_sparsity))
+            for i in 1:length(jacobian_sparsity)
+                idxlist[prob.jacidxlist[i]] = i
+            end
+            viewJac = view(MJacS, idxlist)
+            eval_constraint_jacobian(model, view(MJacS, idxlist), x)
+            # eval_constraint_jacobian(model, MJacS, x)
+            # @show MJacS
+        end
+    end
     if has_hessian
         # Hessian callback
-        function eval_h_cb(x, mode, rows, cols, obj_factor,
-            lambda, values)
-            if mode == :Structure
+        # function eval_h_cb(x, mode, rows, cols, obj_factor,
+        #     lambda, values)
+        function eval_h_cb(mode::Vector{Symbol}, x::Vector{Float64}, obj_factor::Float64, lambda::Vector{Float64}, 
+                        iHSS::Vector{Int32}, jHSS::Vector{Int32}, MHSS::Vector{Float64}, HDD::Vector{Float64}, 
+                        iHSD::Vector{Int32}, jHSD::Vector{Int32}, MHSD::Vector{Float64}, prob)
+            # @show mode
+            if :Structure in mode
                 for i in 1:length(hessian_sparsity)
-                    rows[i] = hessian_sparsity[i][1]
-                    cols[i] = hessian_sparsity[i][2]
+                    iHSS[i] = hessian_sparsity[prob.hesidxlist[i]][1] - 1
+                    jHSS[i] = hessian_sparsity[prob.hesidxlist[i]][2] - 1
                 end
-            else
+            end
+            if :Sparse in mode
+                idxlist = Vector{Int64}(undef, length(hessian_sparsity))
+                for i in 1:length(hessian_sparsity)
+                    idxlist[prob.hesidxlist[i]] = i
+                end
                 obj_factor *= objective_scale
-                eval_hessian_lagrangian(model, values, x, obj_factor, lambda)
+                # @show obj_factor
+                @show lambda
+                lambda .= 1.0
+                eval_hessian_lagrangian(model, view(MHSS, idxlist), x, obj_factor, lambda)
+                # eval_hessian_lagrangian(model, MHSS, x, obj_factor, lambda)
+                # @show MHSS
             end
         end
     else
@@ -850,67 +885,55 @@ function MOI.optimize!(model::Optimizer)
 
     x_l = [v.lower_bound for v in model.variable_info]
     x_u = [v.upper_bound for v in model.variable_info]
-
-    constraint_lb, constraint_ub = constraint_bounds(model)
-
-    start_time = time()
-
-    model.inner = createProblem(num_variables, x_l, x_u, num_constraints,
-                            constraint_lb, constraint_ub,
-                            length(jacobian_sparsity),
-                            length(hessian_sparsity),
-                            eval_f_cb, eval_g_cb, eval_grad_f_cb, eval_jac_g_cb,
-                            eval_h_cb)
-
-    # Ipopt crashes by default if NaN/Inf values are returned from the
-    # evaluation callbacks. This option tells Ipopt to explicitly check for them
-    # and return Invalid_Number_Detected instead. This setting may result in a
-    # minor performance loss and can be overwritten by specifying
-    # check_derivatives_for_naninf="no".
-    addOption(model.inner, "check_derivatives_for_naninf", "yes")
-
-    if !has_hessian
-        addOption(model.inner, "hessian_approximation", "limited-memory")
+    for i in 1:length(x_l)
+        if x_l[i] == -Inf
+            # @show x_l[i]
+            x_l[i] = -1e+20
+        end
     end
-    if num_nlp_constraints == 0 && num_quadratic_constraints == 0
-        addOption(model.inner, "jac_c_constant", "yes")
-        addOption(model.inner, "jac_d_constant", "yes")
-        if !model.nlp_data.has_objective
-            # We turn on this option if all constraints are linear and the
-            # objective is linear or quadratic. From the documentation, it's
-            # unclear if it may also apply if the constraints are at most
-            # quadratic.
-            addOption(model.inner, "hessian_constant", "yes")
+    for i in 1:length(x_u)
+        if x_u[i] == Inf
+            # @show x_u[i]
+            x_u[i] = 1e+20
+        end
+    end
+    # @show x_l, x_u
+    constraint_lb, constraint_ub = constraint_bounds(model)
+    # @show constraint_lb, constraint_ub
+    nnzeq = 0
+    nnzieq = 0
+    for i in 1:length(jacobian_sparsity)
+        idx = jacobian_sparsity[i][1]
+        if constraint_lb[idx] == constraint_ub[idx]
+            nnzeq += 1
+        else
+            nnzieq += 1
         end
     end
 
+    @assert nnzieq + nnzeq == length(jacobian_sparsity)
+
+    
+    start_time = time()
+    # @show num_variables
+    # @show num_constraints
+    # @show length(jacobian_sparsity)
+    # @show length(hessian_sparsity)
+    model.inner = HiopProblem(num_variables, 0, 
+                              Int32(num_variables), Int32(0),
+                              Int32(nnzeq), Int32(nnzieq),
+                              Int32(length(hessian_sparsity)), Int32(0),
+                              num_variables, x_l, x_u,
+                              num_constraints, constraint_lb, constraint_ub,
+                            eval_f_cb, eval_g_cb, eval_grad_f_cb, eval_jac_g_cb,
+                            eval_h_cb)
+    model.inner.jacidxlist = sortperm([el for el in jacobian_sparsity])
+    model.inner.hesidxlist = sortperm([el for el in hessian_sparsity])
+
     # If nothing is provided, the default starting value is 0.0.
-    model.inner.x = [v.start === nothing ? 0.0 : v.start
+    model.inner.x0 = [v.start === nothing ? 0.0 : v.start
                      for v in model.variable_info]
 
-    if model.nlp_dual_start === nothing
-        model.nlp_dual_start = zeros(Float64, num_nlp_constraints)
-    end
-
-    mult_g_start = [
-        [info.dual_start for info in model.linear_le_constraints];
-        [info.dual_start for info in model.linear_ge_constraints];
-        [info.dual_start for info in model.linear_eq_constraints];
-        [info.dual_start for info in model.quadratic_le_constraints];
-        [info.dual_start for info in model.quadratic_ge_constraints];
-        [info.dual_start for info in model.quadratic_eq_constraints];
-        model.nlp_dual_start
-    ]
-    model.inner.mult_g = [start === nothing ? 0.0 : start
-                          for start in mult_g_start]
-    model.inner.mult_x_L = [v.lower_bound_dual_start === nothing ? 0.0 : v.lower_bound_dual_start
-                            for v in model.variable_info]
-    model.inner.mult_x_U = [v.upper_bound_dual_start === nothing ? 0.0 : v.lower_bound_dual_start
-                            for v in model.variable_info]
-
-    for (name, value) in model.options
-        addOption(model.inner, name, value)
-    end
     solveProblem(model.inner)
 
     model.solve_time = time() - start_time

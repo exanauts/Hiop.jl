@@ -7,6 +7,6 @@ using Test
   @test nlp.obj_val ≈ -4.999509728895e+01
 end
 
-# @testset "MathOptInterface" begin
-#     include("MOI_wrapper.jl")
-# end
+@testset "MathOptInterface" begin
+    include("MOI_wrapper.jl")
+end
