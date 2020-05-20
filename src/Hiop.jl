@@ -11,9 +11,9 @@ function __init__()
     Libdl.dlopen("libf77blas.so", Libdl.RTLD_GLOBAL)
     Libdl.dlopen("liblapack.so", Libdl.RTLD_GLOBAL)
     Libdl.dlopen("libhiop.so", Libdl.RTLD_GLOBAL)
-    Libdl.dlopen(joinpath(dirname(@__FILE__), "../deps/libchiopInterface.so"), Libdl.RTLD_GLOBAL)
+    # Libdl.dlopen(joinpath(dirname(@__FILE__), "../deps/libchiopInterface.so"), Libdl.RTLD_GLOBAL)
   catch
-    @warn("Could not load HiOp shared library. Make sure the ENV variable 'JULIA_HIOP_LIBRARY_PATH' points to its location.")
+    @warn("Could not load HiOp shared library. Make sure it is in your LD_LIBRARY_PATH.")
     rethrow()
   end
 end
