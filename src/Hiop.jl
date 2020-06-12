@@ -20,6 +20,7 @@ end
 
 mutable struct cHiopProblem
   refcppHiop::Ptr{Cvoid}
+  hiopinterface::Ptr{Cvoid}
   jprob::Ptr{Cvoid}
   solution::Ptr{Cdouble}
   obj_value::Cdouble
@@ -89,7 +90,7 @@ mutable struct HiopProblem
     m::Int, g_L::Vector{Float64}, g_U::Vector{Float64},
     eval_f, eval_g, eval_grad_f, eval_jac_g, eval_h = nothing, user_data = nothing)
     # Wrap callbacks
-    prob = new(cHiopProblem(C_NULL, C_NULL, C_NULL, 0.0, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL), 
+    prob = new(cHiopProblem(C_NULL, C_NULL, C_NULL, C_NULL, 0.0, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL, C_NULL), 
                 n, m, ns, nd, 
                 nx_sparse, nx_dense, 
                 nnz_sparse_Jaceq, nnz_sparse_Jacineq, Vector{Int64}(),
@@ -128,7 +129,7 @@ mutable struct HiopProblem
                     Ptr{Cdouble}, 
                     Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Ptr{Cvoid}))
     prob.cprob.jprob = pointer_from_objref(prob)
-    ret = ccall(:hiop_createProblem, Cint, (Ptr{cHiopProblem}, Cint,), pointer_from_objref(prob.cprob), ns)
+    ret = ccall(:hiop_createProblem, Cint, (Ptr{cHiopProblem},), pointer_from_objref(prob.cprob))
     if ret != 0 
         error("HiOp: Failed to construct problem.")
     end
