@@ -9,9 +9,9 @@ const MOIB = MOI.Bridges
 # that have lower_bound == upper_bound.
 const optimizer = Hiop.Optimizer()
 
-MOI.set(optimizer, MOI.RawParameter("print_level"), 0)
-MOI.set(optimizer, MOI.RawParameter("fixed_variable_treatment"),
-        "make_constraint")
+# MOI.set(optimizer, MOI.RawParameter("print_level"), 0)
+# MOI.set(optimizer, MOI.RawParameter("fixed_variable_treatment"),
+#         "make_constraint")
 
 const config = MOIT.TestConfig(atol=1e-4, rtol=1e-4,
                                optimal_status=MOI.LOCALLY_SOLVED)
@@ -25,10 +25,10 @@ const config_no_duals = MOIT.TestConfig(atol=1e-4, rtol=1e-4, duals=false,
     @test MOI.get(optimizer, MOI.SolverName()) == "Hiop"
 end
 
-@testset "supports_default_copy_to" begin
-    @test MOIU.supports_default_copy_to(optimizer, false)
-    @test !MOIU.supports_default_copy_to(optimizer, true)
-end
+# @testset "supports_default_copy_to" begin
+#     @test MOIU.supports_default_copy_to(optimizer, false)
+#     @test !MOIU.supports_default_copy_to(optimizer, true)
+# end
 
 # @testset "Unit" begin
 #     bridged = MOIB.full_bridge_optimizer(
@@ -94,5 +94,8 @@ end
 # MOI.empty!(optimizer)
 
 @testset "MOI NLP tests" begin
-    MOIT.nlptest(optimizer, config)
+    # MOIT.nlptest(optimizer, config)
+    MOIT.hs071_test(optimizer, config)
+    # MOIT.hs071_no_hessian_test(optimizer, config)
+    # MOIT.nlp_objective_and_moi_objective_test(optimizer, config)
 end

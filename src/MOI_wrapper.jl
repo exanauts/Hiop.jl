@@ -872,8 +872,8 @@ function MOI.optimize!(model::Optimizer)
                 end
                 obj_factor *= objective_scale
                 # @show obj_factor
-                @show lambda
-                lambda .= 1.0
+                # @show lambda
+                # lambda .= 1.0
                 eval_hessian_lagrangian(model, view(MHSS, idxlist), x, obj_factor, lambda)
                 # eval_hessian_lagrangian(model, MHSS, x, obj_factor, lambda)
                 # @show MHSS
