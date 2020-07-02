@@ -3,7 +3,7 @@ using Test
 @testset "C API" begin
   global ns = 400
   global nd = 100
-  include("../example/ex4.jl")
+  include(joinpath(dirname(@__FILE__), "..", "example", "ex4.jl"))
   @test nlp.obj_val ≈ -4.999509728895e+01
 end
 
