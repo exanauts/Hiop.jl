@@ -6,16 +6,16 @@ export solveProblem
 export HiopProblem
 
 function __init__()
-    try
-        path_to_lib = ENV["JULIA_HIOP_LIBRARY_PATH"]
-        Libdl.dlopen("libf77blas.so", Libdl.RTLD_GLOBAL)
-        Libdl.dlopen("liblapack.so", Libdl.RTLD_GLOBAL)
-        Libdl.dlopen("libhiop.so", Libdl.RTLD_GLOBAL)
-        # Libdl.dlopen(joinpath(dirname(@__FILE__), "../deps/libchiopInterface.so"), Libdl.RTLD_GLOBAL)
-    catch
-        @warn("Could not load HiOp shared library. Make sure it is in your LD_LIBRARY_PATH.")
-        rethrow()
-    end
+    # Load BLAS & LAPACK first
+    Libdl.dlopen("libf77blas.so", Libdl.RTLD_GLOBAL)
+    Libdl.dlopen("liblapack.so", Libdl.RTLD_GLOBAL)
+end
+
+fn = joinpath(dirname(@__FILE__), "..", "deps", "deps.jl")
+if isfile(fn)
+	include(fn)
+else
+	error("Hiop not properly installed. Please run `] build Hiop`")
 end
 
 const HIOP_INFINITY = 1e+20
@@ -132,7 +132,9 @@ mutable struct HiopProblem
                                                 Ptr{Cdouble},
                                                 Cint, Ptr{Cint}, Ptr{Cint}, Ptr{Cdouble}, Ptr{Cvoid}))
         prob.cprob.jprob = pointer_from_objref(prob)
-        ret = ccall(:hiop_createProblem, Cint, (Ptr{cHiopProblem},), pointer_from_objref(prob.cprob))
+        ret = ccall((:hiop_createProblem, libhiop),
+                    Cint, (Ptr{cHiopProblem},),
+                    pointer_from_objref(prob.cprob))
         if ret != 0
             error("HiOp: Failed to construct problem.")
         end
@@ -342,7 +344,9 @@ end
 
 function freeProblem(prob::HiopProblem)
     if prob.cprob.refcppHiop != C_NULL
-        ccall(:hiop_destroyProblem, Cint, (Ptr{cHiopProblem},), pointer_from_objref(prob.cprob))
+        ccall((:hiop_destroyProblem, libhiop),
+              Cint, (Ptr{cHiopProblem},),
+              pointer_from_objref(prob.cprob))
         prob.cprob.refcppHiop = C_NULL
     end
 end
@@ -350,7 +354,9 @@ end
 function solveProblem(prob::HiopProblem)
     final_objval = [0.0]
     prob.cprob.solution = pointer(prob.x)
-    ret = ccall(:hiop_solveProblem, Cint, (Ptr{cHiopProblem}, ), pointer_from_objref(prob.cprob))
+    ret = ccall((:hiop_solveProblem, libhiop),
+                Cint, (Ptr{cHiopProblem}, ),
+                pointer_from_objref(prob.cprob))
     prob.obj_val = prob.cprob.obj_value
     return Int(ret)
 end
