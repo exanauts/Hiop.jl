@@ -1,4 +1,5 @@
 import MathOptInterface
+using SparseArrays
 const MOI = MathOptInterface
 const MOIU = MathOptInterface.Utilities
 
@@ -833,22 +834,37 @@ function MOI.optimize!(model::Optimizer)
 
         if :Structure in mode
             # @show jacobian_sparsity
-            for i in 1:length(jacobian_sparsity)
-                # row
-                iJacS[i] = jacobian_sparsity[prob.jacidxlist[i]][1] - 1
-                # col
-                jJacS[i] = jacobian_sparsity[prob.jacidxlist[i]][2] - 1
-            end
+            # Sparse
+            # for i in 1:length(jacobian_sparsity)
+            #     # row
+            #     iJacS[i] = jacobian_sparsity[prob.jacidxlist[i]][1] - 1
+            #     # col
+            #     jJacS[i] = jacobian_sparsity[prob.jacidxlist[i]][2] - 1
+            # end
         end
         if :Sparse in mode
+            # sparse
+            # idxlist = Vector{Int64}(undef, length(jacobian_sparsity))
+            # for i in 1:length(jacobian_sparsity)
+            #     idxlist[prob.jacidxlist[i]] = i
+            # end
+            # viewJac = view(MJacS, idxlist)
+            # eval_constraint_jacobian(model, view(MJacS, idxlist), x)
+            # # eval_constraint_jacobian(model, MJacS, x)
+            # @show MJacS
+            # dense
             idxlist = Vector{Int64}(undef, length(jacobian_sparsity))
+            iJ = Vector{Int64}(undef, length(jacobian_sparsity))
+            jJ = Vector{Int64}(undef, length(jacobian_sparsity))
+            vJ = Vector{Float64}(undef, length(jacobian_sparsity))
             for i in 1:length(jacobian_sparsity)
                 idxlist[prob.jacidxlist[i]] = i
+                iJ[i] = jacobian_sparsity[i][1]
+                jJ[i] = jacobian_sparsity[i][2]
             end
-            viewJac = view(MJacS, idxlist)
-            eval_constraint_jacobian(model, view(MJacS, idxlist), x)
-            # eval_constraint_jacobian(model, MJacS, x)
-            # @show MJacS
+            eval_constraint_jacobian(model, vJ, x)
+            spJ = sparse(jJ, iJ, vJ)
+            JacD .= reshape(Array(spJ), (length(JacD),))
         end
     end
     if has_hessian
@@ -861,8 +877,10 @@ function MOI.optimize!(model::Optimizer)
             # @show mode
             if :Structure in mode
                 for i in 1:length(hessian_sparsity)
-                    iHSS[i] = hessian_sparsity[prob.hesidxlist[i]][1] - 1
-                    jHSS[i] = hessian_sparsity[prob.hesidxlist[i]][2] - 1
+                    # Sparse
+                    # iHSS[i] = hessian_sparsity[prob.hesidxlist[i]][1] - 1
+                    # jHSS[i] = hessian_sparsity[prob.hesidxlist[i]][2] - 1
+                    # Dense
                 end
             end
             if :Sparse in mode
@@ -871,13 +889,36 @@ function MOI.optimize!(model::Optimizer)
                     idxlist[prob.hesidxlist[i]] = i
                 end
                 obj_factor *= objective_scale
+                # Sparse
                 # @show obj_factor
                 # @show lambda
                 # lambda .= 1.0
-                eval_hessian_lagrangian(model, view(MHSS, idxlist), x, obj_factor, lambda)
+                # vMHSS = view(MHSS, idxlist)
+                # dMHSS = Array(vMHSS)
+                # eval_hessian_lagrangian(model, dMHSS, x, obj_factor, lambda)
+                # vMHSS .= dMHSS
+                # @show typeof(MHSS)
                 # eval_hessian_lagrangian(model, MHSS, x, obj_factor, lambda)
                 # @show MHSS
-            end
+
+                # Dense
+                iH = Vector{Int64}(undef, length(hessian_sparsity))
+                jH = Vector{Int64}(undef, length(hessian_sparsity))
+                vH = Vector{Float64}(undef, length(hessian_sparsity))
+                for i in 1:length(hessian_sparsity)
+                    iH[i] = hessian_sparsity[i][1]
+                    jH[i] = hessian_sparsity[i][2]
+                end
+                eval_hessian_lagrangian(model, vH, x, obj_factor, lambda)
+                spH = sparse(iH, jH, vH)
+                n = Int64(sqrt(length(HDD)))
+                for i in 1:n
+                    for j in i:n
+                        spH[i,j] = spH[j,i]
+                    end
+                end
+                HDD .= reshape(Array(spH), (length(HDD),))
+                end
         end
     else
         eval_h_cb = nothing
@@ -887,19 +928,26 @@ function MOI.optimize!(model::Optimizer)
     x_u = [v.upper_bound for v in model.variable_info]
     for i in 1:length(x_l)
         if x_l[i] == -Inf
-            # @show x_l[i]
             x_l[i] = -1e+20
         end
     end
     for i in 1:length(x_u)
         if x_u[i] == Inf
-            # @show x_u[i]
             x_u[i] = 1e+20
         end
     end
     # @show x_l, x_u
     constraint_lb, constraint_ub = constraint_bounds(model)
-    # @show constraint_lb, constraint_ub
+    for i in 1:length(constraint_lb)
+        if constraint_lb[i] == -Inf
+            constraint_lb[i] = -1e+20
+        end
+    end
+    for i in 1:length(constraint_ub)
+        if constraint_ub[i] == Inf
+            constraint_ub[i] = 1e+20
+        end
+    end
     nnzeq = 0
     nnzieq = 0
     for i in 1:length(jacobian_sparsity)
@@ -915,14 +963,20 @@ function MOI.optimize!(model::Optimizer)
 
     
     start_time = time()
-    # @show num_variables
-    # @show num_constraints
-    # @show length(jacobian_sparsity)
-    # @show length(hessian_sparsity)
-    model.inner = HiopProblem(num_variables, 0, 
-                              Int32(num_variables), Int32(0),
-                              Int32(nnzeq), Int32(nnzieq),
-                              Int32(length(hessian_sparsity)), Int32(0),
+    # sparse
+    # model.inner = HiopProblem(num_variables, 0, 
+    #                           Int32(num_variables), Int32(0),
+    #                           Int32(nnzeq), Int32(nnzieq),
+    #                           Int32(length(hessian_sparsity)), Int32(0),
+    #                           num_variables, x_l, x_u,
+    #                           num_constraints, constraint_lb, constraint_ub,
+    #                         eval_f_cb, eval_g_cb, eval_grad_f_cb, eval_jac_g_cb,
+    #                         eval_h_cb)
+    # dense
+    model.inner = HiopProblem(0, num_variables, 
+                              Int32(0), Int32(num_variables),
+                              Int32(0), Int32(0),
+                              Int32(0), Int32(0),
                               num_variables, x_l, x_u,
                               num_constraints, constraint_lb, constraint_ub,
                             eval_f_cb, eval_g_cb, eval_grad_f_cb, eval_jac_g_cb,

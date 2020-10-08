@@ -10,3 +10,7 @@ end
 @testset "MathOptInterface" begin
     include("MOI_wrapper.jl")
 end
+
+@testset "ACOPF" begin
+    include("acopf.jl")
+end
