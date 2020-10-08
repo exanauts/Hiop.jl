@@ -8,10 +8,7 @@ export HiopProblem
 function __init__()
   try
     path_to_lib = ENV["JULIA_HIOP_LIBRARY_PATH"]
-    Libdl.dlopen("libf77blas.so", Libdl.RTLD_GLOBAL)
-    Libdl.dlopen("liblapack.so", Libdl.RTLD_GLOBAL)
-    Libdl.dlopen("libhiop.so", Libdl.RTLD_GLOBAL)
-    # Libdl.dlopen(joinpath(dirname(@__FILE__), "../deps/libchiopInterface.so"), Libdl.RTLD_GLOBAL)
+    Libdl.dlopen("$(path_to_lib)/libhiop.so", Libdl.RTLD_GLOBAL)
   catch
     @warn("Could not load HiOp shared library. Make sure it is in your LD_LIBRARY_PATH.")
     rethrow()

@@ -1,17 +1,21 @@
 Hiop.jl
 ========
 
-**Hiopt.jl** is a [Julia](http://julialang.org/) interface to the [HiOp](https://github.com/LLNL/hiop) HPC nonlinear solver.
+![tests](https://github.com/exanauts/Hiop.jl/workflows/tests/badge.svg)
+
+This is a [Julia](http://julialang.org/) [MOI](https://github.com/jump-dev/MathOptInterface.jl) interface to the [HiOp](https://github.com/LLNL/hiop) HPC nonlinear solver.
 
 ## Install dependencies
 
+* Install HiOp and set the environment variable `JULIA_HIOP_LIBRARY_PATH` to point to your `libhiop.so` library file.
+
+* Install the Julia package
+
 ```julia
-pkg> activate .
-pkg> instantiate
+pkg> dev https://github.com/exanauts/Hiop.jl
 ```
 
 ## Run tests
 ```julia
-julia> include("test/runtests.jl")
+pkg> test Hiop
 ```
-

@@ -1,0 +1,62 @@
+name: tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        julia-version: ['1.5']
+        julia-arch: [x64]
+        os: [ubuntu-latest]
+
+    steps:
+      - uses: allenevans/set-env@v1.0.0
+        with:
+          overwrite: false
+          JULIA_HIOP_LIBRARY_PATH: ${{ runner.workspace }}/lib
+      - uses: actions/checkout@master
+        with:
+          repository: LLNL/hiop
+          path: hiop
+      - uses: ashutoshvarma/action-cmake-build@master
+        with:
+          source-dir: ${{ runner.workspace }}/Hiop.jl/hiop
+          build-dir: ${{ runner.workspace }}/Hiop.jl/hiop/build
+          # will set the CC & CXX for cmake
+          cc: gcc
+          cxx: g++
+          build-type: Release
+          # Extra options pass to cmake while configuring project
+          configure-options: -DHIOP_USE_MPI=OFF -DCMAKE_BUILD_TYPE=Debug -DHIOP_BUILD_SHARED=ON -DHIOP_BUILD_STATIC=ON -DCMAKE_INSTALL_PREFIX=..
+          run-test: true
+          install-build: true
+          parallel: 4
+      - uses: actions/checkout@v2
+      - uses: julia-actions/setup-julia@latest
+        with:
+          version: ${{ matrix.julia-version }}
+      - uses: julia-actions/julia-buildpkg@latest
+      - uses: actions/checkout@master
+      - uses: canastro/copy-file-action@master
+        with:
+          source: "ipopt.opt"
+          target: "../ipopt.opt"
+      - uses: canastro/copy-file-action@master
+        with:
+          source: "hiop.options"
+          target: "../hiop.options"
+      - uses: canastro/copy-file-action@master
+        with:
+          source: "hiop.options"
+          target: "../../hiop.options"
+      - uses: canastro/copy-file-action@master
+        with:
+          source: "hiop.options"
+          target: "../../../hiop.options"
+      - uses: canastro/copy-file-action@master
+        with:
+          source: "hiop.options"
+          target: "test/hiop.options"
+      - uses: julia-actions/julia-runtest@latest
