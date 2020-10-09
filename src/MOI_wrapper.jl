@@ -808,7 +808,7 @@ function MOI.optimize!(model::Optimizer)
         objective_scale = 0.0
     end
 
-    function eval_f_cb(x::Vector{Float64}, prob::HiopProblem) 
+    function eval_f_cb(x::Vector{Float64}, prob::HiopProblem)
         objective_scale * eval_objective(model, x)
     end
 
@@ -828,7 +828,7 @@ function MOI.optimize!(model::Optimizer)
     # Jacobian callback
     # function eval_jac_g_cb(x, mode, rows, cols, values)
     function eval_jac_g_cb(mode::Vector{Symbol}, x::Vector{Float64},
-        iJacS::Vector{Int32}, jJacS::Vector{Int32}, MJacS::Vector{Float64}, 
+        iJacS::Vector{Int32}, jJacS::Vector{Int32}, MJacS::Vector{Float64},
         JacD::Vector{Float64}, prob::HiopProblem)
         # @show mode
 
@@ -871,8 +871,8 @@ function MOI.optimize!(model::Optimizer)
         # Hessian callback
         # function eval_h_cb(x, mode, rows, cols, obj_factor,
         #     lambda, values)
-        function eval_h_cb(mode::Vector{Symbol}, x::Vector{Float64}, obj_factor::Float64, lambda::Vector{Float64}, 
-                        iHSS::Vector{Int32}, jHSS::Vector{Int32}, MHSS::Vector{Float64}, HDD::Vector{Float64}, 
+        function eval_h_cb(mode::Vector{Symbol}, x::Vector{Float64}, obj_factor::Float64, lambda::Vector{Float64},
+                        iHSS::Vector{Int32}, jHSS::Vector{Int32}, MHSS::Vector{Float64}, HDD::Vector{Float64},
                         iHSD::Vector{Int32}, jHSD::Vector{Int32}, MHSD::Vector{Float64}, prob)
             # @show mode
             if :Structure in mode
@@ -928,12 +928,12 @@ function MOI.optimize!(model::Optimizer)
     x_u = [v.upper_bound for v in model.variable_info]
     for i in 1:length(x_l)
         if x_l[i] == -Inf
-            x_l[i] = -1e+20
+            x_l[i] = -HIOP_INFINITY
         end
     end
     for i in 1:length(x_u)
         if x_u[i] == Inf
-            x_u[i] = 1e+20
+            x_u[i] = +HIOP_INFINITY
         end
     end
     # @show x_l, x_u
@@ -961,7 +961,7 @@ function MOI.optimize!(model::Optimizer)
 
     @assert nnzieq + nnzeq == length(jacobian_sparsity)
 
-    
+
     start_time = time()
     # sparse
     # model.inner = HiopProblem(num_variables, 0, 
@@ -979,8 +979,8 @@ function MOI.optimize!(model::Optimizer)
                               Int32(0), Int32(0),
                               num_variables, x_l, x_u,
                               num_constraints, constraint_lb, constraint_ub,
-                            eval_f_cb, eval_g_cb, eval_grad_f_cb, eval_jac_g_cb,
-                            eval_h_cb)
+                              eval_f_cb, eval_g_cb, eval_grad_f_cb, eval_jac_g_cb,
+                              eval_h_cb)
     model.inner.jacidxlist = sortperm([el for el in jacobian_sparsity])
     model.inner.hesidxlist = sortperm([el for el in hessian_sparsity])
 
