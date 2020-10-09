@@ -41,22 +41,6 @@ jobs:
       - uses: actions/checkout@master
       - uses: canastro/copy-file-action@master
         with:
-          source: "ipopt.opt"
-          target: "../ipopt.opt"
-      - uses: canastro/copy-file-action@master
-        with:
-          source: "hiop.options"
-          target: "../hiop.options"
-      - uses: canastro/copy-file-action@master
-        with:
-          source: "hiop.options"
-          target: "../../hiop.options"
-      - uses: canastro/copy-file-action@master
-        with:
-          source: "hiop.options"
-          target: "../../../hiop.options"
-      - uses: canastro/copy-file-action@master
-        with:
           source: "hiop.options"
           target: "test/hiop.options"
       - uses: julia-actions/julia-runtest@latest

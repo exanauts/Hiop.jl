@@ -5,13 +5,7 @@ using LinearAlgebra
 export solveProblem
 export HiopProblem
 
-fn = joinpath(dirname(@__FILE__), "..", "deps", "deps.jl")
-if isfile(fn)
-	include(fn)
-else
-	error("Hiop not properly installed. Please run `] build Hiop`")
-end
-
+const libhiop = "$(ENV["JULIA_HIOP_LIBRARY_PATH"])/libhiop.$(Libdl.dlext)" 
 const HIOP_INFINITY = 1e+20
 
 mutable struct cHiopProblem
