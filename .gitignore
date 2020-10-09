@@ -3,4 +3,5 @@ Manifest.toml
 *.so
 *.o
 /deps/test
+/deps/deps.jl
 .vscode
