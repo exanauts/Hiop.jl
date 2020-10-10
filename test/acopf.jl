@@ -3,6 +3,7 @@ using Ipopt
 using Hiop
 using DelimitedFiles
 using LinearAlgebra
+using Test
 
 include("opfdata.jl")
 
@@ -16,7 +17,7 @@ function solve(opfmodel, opf_data)
     return opfmodel,status
 end
 
-function model(opf_data; max_iter=100, solver="Ipopt")
+function model(opf_data; max_iter=100, solver="Ipopt", hiopalgebra = :Dense)
     Pg0, Qg0, Vm0, Va0 = initialPt_IPOPT(opf_data)
     lines = opf_data.lines; buses = opf_data.buses; generators = opf_data.generators; baseMVA = opf_data.baseMVA
     busIdx = opf_data.BusIdx; FromLines = opf_data.FromLines; ToLines = opf_data.ToLines; BusGeners = opf_data.BusGenerators;
@@ -30,7 +31,7 @@ function model(opf_data; max_iter=100, solver="Ipopt")
     # JuMP model now
     #
     if solver == "Hiop"
-        opfmodel = Model(optimizer_with_attributes(Hiop.Optimizer))
+        opfmodel = Model(optimizer_with_attributes(Hiop.Optimizer, "algebra" => hiopalgebra))
     else
         opfmodel = Model(optimizer_with_attributes(Ipopt.Optimizer, "max_iter" => max_iter))
     end
@@ -124,8 +125,7 @@ function model(opf_data; max_iter=100, solver="Ipopt")
             - flowmax <=0)
         end
     end
-
-    println("Buses: $nbus  Lines: $nline  Generators: $ngen", nbus, nline, ngen)
+    println("Buses: $nbus  Lines: $nline  Generators: $ngen")
     println("Lines with limits: $nlinelim")
 
     return opfmodel, Pg, Qg, Va, Vm
@@ -158,12 +158,14 @@ function initialPt_IPOPT(opfdata)
 end
 
 for casename in ["case9", "case118", "case300"]
+# for casename in ["case9"]
     casepath = joinpath(dirname(@__FILE__), "data", casename)
     max_iter=100
     opfdata = opf_loaddata(casepath)
     Pg0, Qg0, Vm0, Va0 = initialPt_IPOPT(opfdata)
     opfmodel_ref, Pg_ref, Qg_ref, Va_ref, Vm_ref = model(opfdata; solver="Ipopt")
-    opfmodel, Pg, Qg, Va, Vm = model(opfdata; solver="Hiop")
+    # opfmodel, Pg, Qg, Va, Vm = model(opfdata; solver="Hiop", hiopalgebra = :Dense)
+    opfmodel, Pg, Qg, Va, Vm = model(opfdata; solver="Hiop", hiopalgebra = :Dense)
     opfmodel_ref ,status = solve(opfmodel_ref,opfdata)
     opfmodel,status = solve(opfmodel,opfdata)
     @test value.(Pg) ≈ value.(Pg)
