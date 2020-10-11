@@ -946,31 +946,38 @@ function MOI.optimize!(model::Optimizer)
                     end
                     # println("Sparsity :Sparse : ", length(spH.nzval))
                     if inneriter == 1
-                        lambda .= 1.0
+                        lambda .= 0.0001
                     end
+                    inneriter += 1
                     # @show length(lambda)
                     eval_hessian_lagrangian(model, vH, x, obj_factor, lambda)
                     # @show vH
                     jspH = sparse(iH, jH, vH)
+                    spH.nzval .= 0.0
+                    k = 1
+                    @show length(spH.nzval)
                     for i in 1:n
-                        for j in jspH.colptr[i]:jspH.colptr[i+1]-1
-                            spH[jspH.rowval[j],i] = jspH.nzval[j]
-                            spH[i,jspH.rowval[j]] = jspH.nzval[j]
+                        for j in spH.colptr[i]:spH.colptr[i+1]-1
+                            spH.nzval[k] = jspH[spH.rowval[j],i] + jspH[i,spH.rowval[j]] 
+                            k += 1
                         end
                     end
-                    # @show issymmetric(spH)
+                    @show k
+                    @show issymmetric(spH)
                     n = size(spH,1)
                     # @show spH.nzval
-                    # @show length(spH.nzval)
-                    for i in 1:n
-                        for j in i:n
-                            spH[i,j] = spH[j,i]
-                        end
-                    end
+                    @show length(spH.nzval)
+                    @show length(MHSS)
+                    # for i in 1:n
+                    #     for j in i:n
+                    #         spH[i,j] = spH[j,i]
+                    #     end
+                    # end
                     # @show size(vH)
                     # @show size(MHSS)
                     # @show spH.nzval
                     MHSS .= spH.nzval
+                    # MHSS .= vH
                     # MHSS .= 1.0
                 end
 
@@ -1064,6 +1071,7 @@ function MOI.optimize!(model::Optimizer)
                                 Int32(num_variables), Int32(0),
                                 Int32(nnzeq), Int32(nnzieq),
                                 Int32(length(spH.nzval)), Int32(0),
+                                # Int32(length(hessian_sparsity)), Int32(0),
                                 num_variables, x_l, x_u,
                                 num_constraints, constraint_lb, constraint_ub,
                                 eval_f_cb, eval_g_cb, eval_grad_f_cb, eval_jac_g_cb,
