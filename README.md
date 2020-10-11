@@ -21,12 +21,11 @@ pkg> build Hiop
 
 You are now able to load Hiop in Julia:
 ```julia
-julia> Hiop
+julia> using Hiop
 ```
 
 
 ## Run tests
-You could run the tests either via
 ```julia
 pkg> test Hiop
 ```
