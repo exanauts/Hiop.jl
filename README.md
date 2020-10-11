@@ -30,3 +30,12 @@ You could run the tests either via
 ```julia
 pkg> test Hiop
 ```
+
+## Using dense or sparse algebra in HiOp
+
+```julia
+# Dense algebra
+model = Model(optimizer_with_attributes(Hiop.Optimizer, "algebra" => :Dense))
+# Sparse algebra
+model = Model(optimizer_with_attributes(Hiop.Optimizer, "algebra" => :Sparse))
+```

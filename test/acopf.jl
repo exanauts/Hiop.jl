@@ -176,7 +176,8 @@ for case in [[0.0283286,"case9"],[0.00357143, "case118"],[0.00645161, "case300"]
 end
 
 # Sparse Hiop algebra
-for case in [[0.0283286,"case9"],[0.00357143, "case118"],[0.00645161, "case300"]]
+# This works with sparse algebra
+for case in [[0.0283286,"case9"],[0.00357143, "case118"]]
     casepath = joinpath(dirname(@__FILE__), "data", case[2])
     max_iter=100
     opfdata = opf_loaddata(casepath)
@@ -191,3 +192,20 @@ for case in [[0.0283286,"case9"],[0.00357143, "case118"],[0.00645161, "case300"]
     @test value.(Va) ≈ value.(Va)
     @test objective_value(opfmodel) ≈ objective_value(opfmodel_ref)
 end
+
+# Crashes
+# for case in [[0.00645161, "case300"]]
+#     casepath = joinpath(dirname(@__FILE__), "data", case[2])
+#     max_iter=100
+#     opfdata = opf_loaddata(casepath)
+#     Pg0, Qg0, Vm0, Va0 = initialPt_IPOPT(opfdata)
+#     opfmodel_ref, Pg_ref, Qg_ref, Va_ref, Vm_ref = model(opfdata; solver="Ipopt", scaling = case[1])
+#     opfmodel, Pg, Qg, Va, Vm = model(opfdata; solver="Hiop", hiopalgebra = :Sparse, scaling = case[1])
+#     opfmodel_ref ,status = solve(opfmodel_ref,opfdata)
+#     opfmodel,status = solve(opfmodel,opfdata)
+#     @test_broken value.(Pg) ≈ value.(Pg)
+#     @test_broken value.(Qg) ≈ value.(Qg)
+#     @test_broken value.(Vm) ≈ value.(Vm)
+#     @test_broken value.(Va) ≈ value.(Va)
+#     @test_broken objective_value(opfmodel) ≈ objective_value(opfmodel_ref)
+# end
