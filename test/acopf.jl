@@ -17,7 +17,7 @@ function solve(opfmodel, opf_data)
     return opfmodel,status
 end
 
-function model(opf_data; max_iter=100, solver="Ipopt", hiopalgebra = :Dense)
+function model(opf_data; max_iter=100, solver="Ipopt", hiopalgebra = :Dense, scaling = 1.0)
     Pg0, Qg0, Vm0, Va0 = initialPt_IPOPT(opf_data)
     lines = opf_data.lines; buses = opf_data.buses; generators = opf_data.generators; baseMVA = opf_data.baseMVA
     busIdx = opf_data.BusIdx; FromLines = opf_data.FromLines; ToLines = opf_data.ToLines; BusGeners = opf_data.BusGenerators;
@@ -59,7 +59,7 @@ function model(opf_data; max_iter=100, solver="Ipopt", hiopalgebra = :Dense)
         coeff2[i] = v.coeff[v.n - 2]
     end
 
-    @NLobjective(opfmodel, Min, sum( coeff2[i]*(baseMVA*Pg[i])^2 
+    @NLobjective(opfmodel, Min, scaling*sum( coeff2[i]*(baseMVA*Pg[i])^2 
                                     + coeff1[i]*(baseMVA*Pg[i])
                                     + coeff0[i] for i=1:ngen))
 
@@ -157,15 +157,32 @@ function initialPt_IPOPT(opfdata)
     return Pg,Qg,Vm,Va
 end
 
-for casename in ["case9", "case118", "case300"]
-# for casename in ["case9"]
-    casepath = joinpath(dirname(@__FILE__), "data", casename)
+# cases with objective scaling
+# Dense Hiop algebra
+for case in [[0.0283286,"case9"],[0.00357143, "case118"],[0.00645161, "case300"]]
+    casepath = joinpath(dirname(@__FILE__), "data", case[2])
     max_iter=100
     opfdata = opf_loaddata(casepath)
     Pg0, Qg0, Vm0, Va0 = initialPt_IPOPT(opfdata)
-    opfmodel_ref, Pg_ref, Qg_ref, Va_ref, Vm_ref = model(opfdata; solver="Ipopt")
-    # opfmodel, Pg, Qg, Va, Vm = model(opfdata; solver="Hiop", hiopalgebra = :Dense)
-    opfmodel, Pg, Qg, Va, Vm = model(opfdata; solver="Hiop", hiopalgebra = :Dense)
+    opfmodel_ref, Pg_ref, Qg_ref, Va_ref, Vm_ref = model(opfdata; solver="Ipopt", scaling = case[1])
+    opfmodel, Pg, Qg, Va, Vm = model(opfdata; solver="Hiop", hiopalgebra = :Dense, scaling = case[1])
+    opfmodel_ref ,status = solve(opfmodel_ref,opfdata)
+    opfmodel,status = solve(opfmodel,opfdata)
+    @test value.(Pg) ≈ value.(Pg)
+    @test value.(Qg) ≈ value.(Qg)
+    @test value.(Vm) ≈ value.(Vm)
+    @test value.(Va) ≈ value.(Va)
+    @test objective_value(opfmodel) ≈ objective_value(opfmodel_ref)
+end
+
+# Sparse Hiop algebra
+for case in [[0.0283286,"case9"],[0.00357143, "case118"],[0.00645161, "case300"]]
+    casepath = joinpath(dirname(@__FILE__), "data", case[2])
+    max_iter=100
+    opfdata = opf_loaddata(casepath)
+    Pg0, Qg0, Vm0, Va0 = initialPt_IPOPT(opfdata)
+    opfmodel_ref, Pg_ref, Qg_ref, Va_ref, Vm_ref = model(opfdata; solver="Ipopt", scaling = case[1])
+    opfmodel, Pg, Qg, Va, Vm = model(opfdata; solver="Hiop", hiopalgebra = :Sparse, scaling = case[1])
     opfmodel_ref ,status = solve(opfmodel_ref,opfdata)
     opfmodel,status = solve(opfmodel,opfdata)
     @test value.(Pg) ≈ value.(Pg)
