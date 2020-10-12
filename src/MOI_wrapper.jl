@@ -785,7 +785,6 @@ function MOI.optimize!(model::Optimizer)
             error("Option algebra set to $(model.options["algebra"]). It should be either :Dense or :Sparse")
         end
     end
-    @show algebra
     # TODO: Reuse model.inner for incremental solves if possible.
     num_variables = length(model.variable_info)
     num_linear_le_constraints = length(model.linear_le_constraints)
@@ -866,7 +865,10 @@ function MOI.optimize!(model::Optimizer)
                 MJacS .= spJ.nzval
             end
             if algebra == :Dense
-                JacD .= reshape(Array(spJ), (length(JacD),))
+                tmp = Array(spJ)
+                dJ = zeros(num_variables, num_constraints)
+                dJ[1:size(tmp,1), 1:size(tmp,2)] = tmp 
+                JacD .= reshape(dJ, (length(JacD),))
             end
         end
     end
@@ -907,10 +909,15 @@ function MOI.optimize!(model::Optimizer)
                         jH[i] = hessian_sparsity[i][2]
                     end
                     eval_hessian_lagrangian(model, vH, x, obj_factor, lambda)
-                    spH = sparse(iH, jH, vH)
-                    n = Int64(sqrt(length(HDD)))
-                    for i in 1:n
-                        for j in i:n
+                    tmp = sparse(iH, jH, vH)
+                    newcolptr = tmp.colptr
+                    resize!(newcolptr, num_variables+1)
+                    for i=tmp.n+2:num_variables+1
+                        newcolptr[i] = tmp.colptr[tmp.n+1] 
+                    end
+                    spH = SparseMatrixCSC(num_variables, num_variables, newcolptr, tmp.rowval, tmp.nzval)
+                    for i in 1:num_variables
+                        for j in i:num_variables
                             spH[i,j] = spH[j,i]
                         end
                     end
