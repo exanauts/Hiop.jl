@@ -4,12 +4,14 @@ on: [push, pull_request]
 
 jobs:
   test:
+    env:
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: true
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        julia-version: ['1.5']
+        julia-version: ['1.5','1.6.0-rc2']
         julia-arch: [x64]
-        os: [ubuntu-latest]
+        os: [ubuntu-20.04]
 
     steps:
       - uses: allenevans/set-env@v1.0.0
